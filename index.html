@@ -2,163 +2,241 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Llama 3.3 Chat</title>
-    <!-- Tailwind CSS for styling -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Chat UI</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Marked.js for Markdown rendering -->
+    <!-- Marked.js -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- DOMPurify for security (sanitizing HTML) -->
+    <!-- DOMPurify -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
-    <!-- Highlight.js for code syntax highlighting -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <!-- Highlight.js -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        gpt: {
+                            sidebar: '#171717',
+                            main: '#212121',
+                            input: '#2f2f2f',
+                            user: '#2f2f2f',
+                            text: '#ececec',
+                            subtext: '#b4b4b4',
+                            hover: '#2f2f2f'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Söhne', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Ubuntu', 'Cantarell', 'Noto Sans', 'sans-serif', 'Helvetica Neue', 'Arial', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'],
+                    }
+                }
+            }
+        }
+    </script>
 
     <style>
-        /* Custom scrollbar for webkit */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #4b5563;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #6b7280;
-        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #424242; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b6b6b; }
 
-        /* Typography fixes for markdown content */
-        .prose pre {
-            background-color: #1f2937;
-            padding: 1em;
-            border-radius: 0.5em;
-            overflow-x: auto;
-        }
-        .prose code {
-            color: #e5e7eb;
-            background-color: #374151;
-            padding: 0.2em 0.4em;
-            border-radius: 0.25em;
-            font-size: 0.875em;
-        }
-        .prose pre code {
-            background-color: transparent;
-            padding: 0;
-            color: inherit;
-        }
-        .prose p {
-            margin-bottom: 0.75em;
-        }
-        .prose ul {
-            list-style-type: disc;
-            padding-left: 1.5em;
-            margin-bottom: 0.75em;
-        }
-        .prose ol {
-            list-style-type: decimal;
-            padding-left: 1.5em;
-            margin-bottom: 0.75em;
-        }
+        .prose pre { background-color: #0d0d0d !important; border-radius: 0.5rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
+        .prose code { background-color: rgba(255,255,255,0.1); padding: 0.2em 0.4em; border-radius: 0.25em; font-size: 0.875em; font-weight: 400; }
+        .prose pre code { background-color: transparent; padding: 0; font-size: 0.875em; color: inherit; }
+        .prose p { margin-bottom: 1em; line-height: 1.6; }
+        .prose ul, .prose ol { margin-bottom: 1em; padding-left: 1.5em; }
+        .prose li { margin-bottom: 0.25em; }
         
-        /* Typing animation dot */
-        .typing-dot {
-            animation: bounce 1.4s infinite ease-in-out both;
-        }
+        /* Make images responsive and rounded */
+        .prose img { border-radius: 0.75rem; margin-top: 1rem; margin-bottom: 1rem; width: 100%; height: auto; display: block; }
+        
+        .typing-dot { animation: bounce 1.4s infinite ease-in-out both; background-color: #ececec; }
         .typing-dot:nth-child(1) { animation-delay: -0.32s; }
         .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+
+        #user-input::-webkit-scrollbar { display: none; }
         
-        @keyframes bounce {
-            0%, 80%, 100% { transform: scale(0); }
-            40% { transform: scale(1); }
+        /* Dropdown transition */
+        .dropdown-menu {
+            opacity: 0;
+            transform: translateY(-10px) translateX(-50%);
+            pointer-events: none;
+            transition: all 0.2s ease-in-out;
+        }
+        .dropdown-menu.active {
+            opacity: 1;
+            transform: translateY(0) translateX(-50%);
+            pointer-events: auto;
+        }
+
+        /* Thought Process Styles - Updated for consistency */
+        .thought-wrapper {
+            margin-bottom: 1rem;
+        }
+        details > summary {
+            list-style: none;
+        }
+        details > summary::-webkit-details-marker {
+            display: none;
         }
     </style>
 </head>
-<body class="bg-gray-900 text-gray-100 h-screen flex flex-col font-sans antialiased overflow-hidden">
+<body class="bg-gpt-main text-gpt-text h-[100dvh] flex overflow-hidden font-sans">
 
-    <!-- Header -->
-    <header class="bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center shadow-md z-10">
-        <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                </svg>
-            </div>
-            <div>
-                <h1 class="font-bold text-xl text-white tracking-tight">AI Assistant</h1>
-                <p class="text-xs text-blue-400 font-mono" id="model-display">Connecting...</p>
-            </div>
-        </div>
-        <button onclick="clearChat()" class="text-gray-400 hover:text-white transition-colors text-sm font-medium flex items-center gap-1">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            Clear History
-        </button>
-    </header>
+    <!-- Sidebar Removed -->
 
-    <!-- Chat Container -->
-    <main id="chat-container" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 scroll-smooth">
-        <!-- Welcome Message -->
-        <div class="flex justify-start">
-            <div class="bg-gray-800 border border-gray-700 rounded-2xl rounded-tl-none py-3 px-5 max-w-[85%] md:max-w-[75%] shadow-sm">
-                <div class="prose prose-invert prose-sm max-w-none">
-                    <p>Hello! I am connected to <strong>Llama 3.3</strong>. How can I help you with your code or questions today?</p>
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col relative h-full">
+        
+        <!-- Mobile Header -->
+        <header class="flex md:hidden justify-between items-center p-3 text-gray-200 bg-gpt-main z-10 sticky top-0">
+            <div class="w-10"></div> <!-- Spacer -->
+            
+            <!-- Mobile Model Selector -->
+            <div class="relative">
+                <button onclick="toggleDropdown('mobile')" class="font-medium text-base flex items-center gap-1 cursor-pointer hover:bg-gray-800 px-3 py-1 rounded-lg transition-colors" id="mobile-model-btn">
+                    <span class="model-name-display">Llama 3.3</span> 
+                    <i class="ph ph-caret-down text-gray-500"></i>
+                </button>
+                <div id="mobile-dropdown" class="dropdown-menu absolute top-full left-1/2 mt-2 w-64 bg-gpt-input border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col p-1.5">
+                    <!-- JS populated -->
                 </div>
             </div>
-        </div>
-    </main>
 
-    <!-- Input Area -->
-    <footer class="p-4 bg-gray-800 border-t border-gray-700">
-        <div class="max-w-4xl mx-auto relative">
-            <form id="chat-form" class="relative flex items-end gap-2 bg-gray-900 border border-gray-600 rounded-xl p-2 shadow-inner focus-within:ring-2 focus-within:ring-blue-500/50 transition-all">
-                
-                <textarea 
-                    id="user-input" 
-                    rows="1" 
-                    placeholder="Type a message..." 
-                    class="w-full bg-transparent text-gray-100 placeholder-gray-500 text-base p-3 resize-none focus:outline-none max-h-48 overflow-y-auto"
-                    onkeydown="handleEnter(event)"></textarea>
-                
-                <button type="submit" id="send-btn" class="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white p-3 rounded-lg transition-all duration-200 flex-shrink-0 shadow-lg">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transform rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                    </svg>
+            <button class="p-2 rounded-md hover:bg-gray-800" onclick="window.location.reload()">
+                <i class="ph ph-note-pencil text-2xl"></i>
+            </button>
+        </header>
+
+        <!-- Desktop Header (Model Selector) -->
+        <header class="hidden md:flex items-center p-3 text-gray-200 absolute top-0 left-0 right-0 z-10">
+            <div class="relative mx-auto">
+                <button onclick="toggleDropdown('desktop')" class="flex items-center gap-1 bg-transparent hover:bg-gpt-input px-3 py-1.5 rounded-xl transition-colors group" id="desktop-model-btn">
+                    <span class="font-semibold text-lg opacity-90 model-name-display">Llama 3.3</span>
+                    <i class="ph ph-caret-down text-gray-500 mt-0.5 group-hover:text-gray-300 transition-colors"></i>
                 </button>
-            </form>
-            <div class="text-center mt-2">
-                <p class="text-[10px] text-gray-500">AI can make mistakes. Please check important info.</p>
+
+                <!-- Desktop Dropdown -->
+                <div id="desktop-dropdown" class="dropdown-menu absolute top-full left-1/2 mt-2 w-72 bg-gpt-input border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col p-1.5">
+                    <!-- JS populated -->
+                </div>
             </div>
-        </div>
-    </footer>
+        </header>
+
+        <!-- Chat Area -->
+        <main id="chat-container" class="flex-1 overflow-y-auto w-full max-w-3xl mx-auto pt-2 pb-32 px-4 scroll-smooth">
+            
+            <!-- Empty State / Welcome -->
+            <div class="h-full flex flex-col items-center justify-center space-y-8 opacity-100 transition-opacity duration-500" id="welcome-screen">
+                <div class="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-2">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="black" stroke-width="2" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <div class="grid grid-cols-2 gap-4 w-full max-w-2xl px-4">
+                    <button class="border border-white/10 rounded-2xl p-4 hover:bg-white/5 text-left transition-colors text-sm">
+                        <div class="font-medium text-gray-200 mb-1">Code a Python script</div>
+                        <div class="text-gray-500">to automate daily tasks</div>
+                    </button>
+                    <button class="border border-white/10 rounded-2xl p-4 hover:bg-white/5 text-left transition-colors text-sm">
+                        <div class="font-medium text-gray-200 mb-1">Explain quantum physics</div>
+                        <div class="text-gray-500">like I'm five years old</div>
+                    </button>
+                    <button class="border border-white/10 rounded-2xl p-4 hover:bg-white/5 text-left transition-colors text-sm">
+                        <div class="font-medium text-gray-200 mb-1">Write a haiku</div>
+                        <div class="text-gray-500">about artificial intelligence</div>
+                    </button>
+                    <button class="border border-white/10 rounded-2xl p-4 hover:bg-white/5 text-left transition-colors text-sm">
+                        <div class="font-medium text-gray-200 mb-1">Debug this code</div>
+                        <div class="text-gray-500">find the error in the loop</div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Messages will be inserted here -->
+            <div id="messages-list" class="flex flex-col gap-6 w-full hidden pb-4"></div>
+            
+        </main>
+
+        <!-- Input Area -->
+        <footer class="w-full max-w-3xl mx-auto px-4 pb-4 md:pb-6 relative z-20">
+            <div class="relative">
+                <form id="chat-form" class="bg-gpt-input rounded-[26px] shadow-lg border border-white/5 flex flex-col transition-all">
+                    
+                    <!-- Textarea -->
+                    <div class="flex items-end gap-2 p-3 relative">
+                        <!-- Functions Menu Wrapper -->
+                        <div class="relative">
+                            <button type="button" id="attach-btn" class="text-gray-400 hover:text-white p-2 rounded-full transition-colors hidden sm:block">
+                                <i class="ph ph-plus text-xl"></i>
+                                <i class="ph ph-paperclip text-xl absolute top-2 left-2 opacity-0"></i>
+                            </button>
+                             <button type="button" id="attach-btn-real" class="text-gray-400 hover:text-white p-2 rounded-full transition-colors hidden sm:block">
+                                <i class="ph ph-paperclip text-xl"></i>
+                            </button>
+                            
+                            <!-- The Functions Tab/Menu -->
+                            <div id="attach-menu" class="absolute bottom-full left-0 mb-3 w-56 bg-gpt-input border border-white/10 rounded-2xl shadow-2xl overflow-hidden hidden z-50 p-1.5 transition-all origin-bottom-left">
+                                <div class="px-3 py-3 text-center text-sm text-gray-500 italic">
+                                    No functions active
+                                </div>
+                            </div>
+                        </div>
+
+                        <textarea 
+                            id="user-input" 
+                            rows="1" 
+                            placeholder="Message..." 
+                            class="w-full bg-transparent text-white placeholder-gray-400 text-base py-3 resize-none focus:outline-none max-h-[200px]"
+                            onkeydown="handleEnter(event)"></textarea>
+                        
+                        <button type="submit" id="send-btn" disabled class="bg-white/20 disabled:bg-transparent disabled:text-gray-500 text-white p-2 rounded-full transition-all duration-200 flex-shrink-0 self-end mb-1">
+                            <i class="ph ph-arrow-up text-xl font-bold"></i>
+                        </button>
+                    </div>
+                </form>
+                <div class="text-center mt-2">
+                    <p class="text-xs text-gray-500">AI can make mistakes. Check important info.</p>
+                </div>
+            </div>
+        </footer>
+    </div>
 
     <script>
         // ==================================================================================
         // 🛠️ CONFIGURATION SETTINGS
         // ==================================================================================
         
-        // 1. YOUR API KEY
         const API_KEY = 'csk-5tn6vem2ppnw8jvex8vcppdn2n55f9n55hrkt3kkccmd5yfc';
-
-        // 2. THE AI MODEL ID
-        // Note: For Cerebras, common IDs are 'llama3.1-70b' or 'llama-3.3-70b'. 
-        // If 3.3 fails, try 'llama3.1-70b'.
-        const AI_MODEL = 'llama-3.3-70b'; 
-
-        // 3. API ENDPOINT (Cerebras Inference)
         const API_URL = 'https://api.cerebras.ai/v1/chat/completions';
+
+        // Updated Model List with SumoAiGenerator
+        const AVAILABLE_MODELS = [
+            { id: 'llama-3.3-70b', name: 'Llama 3.3', description: 'Great for general tasks' },
+            { id: 'gpt-oss-120b', name: 'GPT OSS 120B', description: 'High capability model' },
+            { id: 'qwen-3-32b', name: 'Qwen 3 32B', description: 'Fast and efficient' },
+            { id: 'zai-glm-4.6', name: 'Zai GLM 4.6', description: 'Advanced reasoning' },
+            { id: 'qwen-3-235b-a22b-instruct-2507', name: 'Qwen 3 235B', description: 'Heavy duty instructions' },
+            { id: 'sumo-ai-gen', name: 'SumoAiGenerator', description: 'Image generator' }
+        ];
+
+        let currentModelId = AVAILABLE_MODELS[0].id;
 
         // ==================================================================================
 
         const chatContainer = document.getElementById('chat-container');
+        const messagesList = document.getElementById('messages-list');
+        const welcomeScreen = document.getElementById('welcome-screen');
         const chatForm = document.getElementById('chat-form');
         const userInput = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
-        const modelDisplay = document.getElementById('model-display');
+        const modelNameDisplays = document.querySelectorAll('.model-name-display');
 
         // Initialize Markdown renderer
         marked.setOptions({
@@ -167,22 +245,158 @@
                 return hljs.highlight(code, { language }).value;
             },
             langPrefix: 'hljs language-',
-            breaks: true
+            breaks: true,
+            gfm: true
         });
 
-        // Display current configuration
-        modelDisplay.innerText = `Model: ${AI_MODEL}`;
+        // STANDARD SYSTEM PROMPT (For Qwen/General)
+        const SYSTEM_PROMPT_BASIC = "You are a helpful, expert coding assistant. Answer concisely and accurately.";
 
-        // Store chat history context
-        let messages = [
-            { role: "system", content: "You are a helpful, expert coding assistant." }
-        ];
+        // CHAIN OF THOUGHT SYSTEM PROMPT (For others)
+        const SYSTEM_PROMPT_THINKING = `You are a helpful, expert coding assistant.
 
-        // Auto-resize textarea
+CRITICAL INSTRUCTION:
+To provide the highest quality answer, you MUST engage in a "Chain of Thought" reasoning process before answering.
+
+Your Goal: Use the thinking block to actually SOLVE the problem, catch errors, and refine your approach before presenting the final result.
+
+FORMATTING RULES:
+1.  **Start Immediately**: Begin your response with <think>. No introductory text (e.g. "Sure!", "Thinking about it...").
+2.  **Thinking Process**: Inside <think>...</think>, you must:
+    -   **Analyze**: Break down requirements.
+    -   **Plan**: Outline steps.
+    -   **Critique**: Check for errors/edge cases.
+    -   **Refine**: Update plan.
+3.  **Final Output**: After closing </think>, provide the polished answer. 
+4.  **Brevity**: Unless requested otherwise, keep the FINAL answer concise.
+
+Output Structure:
+<think>
+[Deep reasoning...]
+</think>
+[Concise final response]`;
+        
+        let messages = [];
+
+        // --- Model Switching Logic ---
+        function initModelSelectors() {
+            const dropdowns = [document.getElementById('mobile-dropdown'), document.getElementById('desktop-dropdown')];
+            
+            dropdowns.forEach(dropdown => {
+                if (!dropdown) return;
+                dropdown.innerHTML = '';
+                
+                AVAILABLE_MODELS.forEach(model => {
+                    const item = document.createElement('button');
+                    item.className = "w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors flex items-center justify-between group";
+                    item.onclick = () => selectModel(model.id);
+                    
+                    const textContainer = document.createElement('div');
+                    textContainer.className = "flex flex-col";
+                    
+                    const nameSpan = document.createElement('span');
+                    nameSpan.className = "text-sm font-medium text-gray-200 group-hover:text-white";
+                    nameSpan.innerText = model.name;
+                    
+                    const descSpan = document.createElement('span');
+                    descSpan.className = "text-xs text-gray-500 group-hover:text-gray-400";
+                    descSpan.innerText = model.description;
+
+                    textContainer.appendChild(nameSpan);
+                    textContainer.appendChild(descSpan);
+                    item.appendChild(textContainer);
+
+                    if (model.id === currentModelId) {
+                        const check = document.createElement('i');
+                        check.className = "ph ph-check text-white text-lg";
+                        item.appendChild(check);
+                    }
+
+                    dropdown.appendChild(item);
+                });
+            });
+        }
+
+        function toggleDropdown(type) {
+            const dropdown = document.getElementById(`${type}-dropdown`);
+            const allDropdowns = document.querySelectorAll('.dropdown-menu');
+            allDropdowns.forEach(d => {
+                if (d !== dropdown) d.classList.remove('active');
+            });
+            dropdown.classList.toggle('active');
+        }
+
+        // RESET CHAT FUNCTIONALITY
+        function resetChat() {
+            // Determine prompt based on model
+            let initialPrompt = SYSTEM_PROMPT_THINKING;
+            
+            // Disable Thinking for Qwen 235B OR Sumo Generator
+            if (currentModelId === 'qwen-3-235b-a22b-instruct-2507' || currentModelId === 'sumo-ai-gen') {
+                initialPrompt = SYSTEM_PROMPT_BASIC;
+            }
+
+            messages = [
+                { role: "system", content: initialPrompt }
+            ];
+            
+            messagesList.innerHTML = '';
+            messagesList.classList.add('hidden');
+            welcomeScreen.style.display = 'flex';
+            welcomeScreen.style.opacity = '1';
+            
+            userInput.value = '';
+            userInput.style.height = 'auto';
+            sendBtn.disabled = true;
+            sendBtn.classList.add('bg-transparent', 'text-gray-500');
+            sendBtn.classList.remove('bg-white', 'text-black');
+        }
+
+        function selectModel(id) {
+            currentModelId = id;
+            const modelObj = AVAILABLE_MODELS.find(m => m.id === id);
+            
+            modelNameDisplays.forEach(el => el.innerText = modelObj.name);
+            userInput.placeholder = `Message ${modelObj.name}`;
+
+            initModelSelectors();
+            document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('active'));
+            
+            // Trigger Reset
+            resetChat();
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.relative')) {
+                document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('active'));
+                
+                // Also close attach menu if clicking outside
+                const attachMenu = document.getElementById('attach-menu');
+                const attachBtn = document.getElementById('attach-btn-real');
+                if (attachMenu && !attachMenu.contains(e.target) && !attachBtn.contains(e.target)) {
+                    attachMenu.classList.add('hidden');
+                }
+            }
+        });
+
+        initModelSelectors();
+        resetChat(); // Initialize first chat
+
+        // --- Chat Logic ---
+
         userInput.addEventListener('input', function() {
             this.style.height = 'auto';
             this.style.height = (this.scrollHeight) + 'px';
-            if(this.value === '') this.style.height = 'auto';
+            
+            if (this.value.trim().length > 0) {
+                sendBtn.disabled = false;
+                sendBtn.classList.remove('bg-transparent', 'text-gray-500');
+                sendBtn.classList.add('bg-white', 'text-black');
+            } else {
+                sendBtn.disabled = true;
+                sendBtn.classList.add('bg-transparent', 'text-gray-500');
+                sendBtn.classList.remove('bg-white', 'text-black');
+            }
         });
 
         function handleEnter(e) {
@@ -192,48 +406,73 @@
             }
         }
 
-        function clearChat() {
-            if(confirm("Clear conversation history?")) {
-                messages = [{ role: "system", content: "You are a helpful, expert coding assistant." }];
-                // Keep the welcome message, remove the rest
-                const welcome = chatContainer.firstElementChild;
-                chatContainer.innerHTML = '';
-                chatContainer.appendChild(welcome);
+        function appendMessage(role, content, isLoading = false) {
+            if (messagesList.classList.contains('hidden')) {
+                messagesList.classList.remove('hidden');
+                welcomeScreen.style.display = 'none';
             }
-        }
 
-        function createMessageElement(role, content, isLoading = false) {
-            const wrapper = document.createElement('div');
-            wrapper.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`;
-            
+            const messageRow = document.createElement('div');
+            messageRow.className = `w-full flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+
             const bubble = document.createElement('div');
-            const baseClasses = "py-3 px-5 max-w-[85%] md:max-w-[75%] shadow-sm text-sm md:text-base";
             
             if (role === 'user') {
-                bubble.className = `${baseClasses} bg-blue-600 text-white rounded-2xl rounded-tr-none`;
-                bubble.innerText = content; // User text is plain text
+                bubble.className = "bg-[#2f2f2f] text-white px-5 py-2.5 rounded-3xl max-w-[85%] sm:max-w-[75%] text-base leading-relaxed break-words";
+                bubble.innerText = content;
+                messageRow.appendChild(bubble);
+                messagesList.appendChild(messageRow); 
             } else {
-                bubble.className = `${baseClasses} bg-gray-800 border border-gray-700 text-gray-100 rounded-2xl rounded-tl-none prose prose-invert prose-sm max-w-none break-words`;
+                bubble.className = "text-gray-100 max-w-full w-full prose prose-invert prose-p:leading-relaxed prose-pre:p-0";
                 
+                const container = document.createElement('div');
+                container.className = "flex gap-4 w-full max-w-3xl";
+                
+                const icon = document.createElement('div');
+                icon.className = "flex-shrink-0 w-8 h-8 rounded-full border border-white/10 flex items-center justify-center mt-1";
+                icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="white" stroke-width="2" stroke-linejoin="round"/></svg>`;
+
+                const textContent = document.createElement('div');
+                textContent.className = "flex-1 min-w-0 overflow-hidden";
+                
+                // --- STRUCTURE FOR THINKING VS ANSWER ---
+                const thinkingContainer = document.createElement('div');
+                thinkingContainer.className = "thought-wrapper hidden mb-4"; // Ensure this class matches CSS
+                
+                const answerContainer = document.createElement('div');
+                answerContainer.className = "answer-wrapper";
+
                 if (isLoading) {
-                    bubble.innerHTML = `
-                        <div class="flex space-x-1 h-6 items-center">
-                            <div class="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
-                            <div class="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
-                            <div class="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
-                        </div>`;
-                } else {
-                    // Sanitize and parse markdown
-                    bubble.innerHTML = DOMPurify.sanitize(marked.parse(content));
+                     answerContainer.innerHTML = `<div class="flex items-center gap-1 h-6"><div class="w-2 h-2 rounded-full typing-dot"></div></div>`;
+                } else if (content) {
+                    answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(content));
                 }
+
+                textContent.appendChild(thinkingContainer);
+                textContent.appendChild(answerContainer);
+
+                bubble.appendChild(textContent); 
+                
+                container.appendChild(icon);
+                container.appendChild(textContent);
+                messageRow.appendChild(container);
+
+                messagesList.appendChild(messageRow); 
+
+                return { 
+                    row: messageRow, 
+                    thinkingContainer: thinkingContainer, 
+                    answerContainer: answerContainer,
+                    loader: answerContainer.firstChild,
+                    bubble: bubble // Return bubble for image injection
+                };
             }
 
-            wrapper.appendChild(bubble);
-            return { wrapper, bubble };
+            return { row: messageRow };
         }
 
         function scrollToBottom() {
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+            chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
         }
 
         chatForm.addEventListener('submit', async (e) => {
@@ -241,26 +480,52 @@
             const text = userInput.value.trim();
             if (!text) return;
 
-            // 1. Add User Message
-            const userMsgEl = createMessageElement('user', text);
-            chatContainer.appendChild(userMsgEl.wrapper);
+            appendMessage('user', text);
             messages.push({ role: "user", content: text });
             
             userInput.value = '';
             userInput.style.height = 'auto';
-            scrollToBottom();
-
-            // 2. Add AI Loading State
-            const aiMsgEl = createMessageElement('assistant', '', true);
-            chatContainer.appendChild(aiMsgEl.wrapper);
-            scrollToBottom();
-
             sendBtn.disabled = true;
-            sendBtn.classList.add('opacity-50');
+            sendBtn.classList.add('bg-transparent', 'text-gray-500');
+            sendBtn.classList.remove('bg-white', 'text-black');
+            
+            scrollToBottom();
+
+            // --- SPECIAL LOGIC FOR IMAGE GENERATOR ---
+            if (currentModelId === 'sumo-ai-gen') {
+                const aiMsgEls = appendMessage('assistant', '', true); // Loading state
+                scrollToBottom();
+                
+                // Simulate network delay for effect
+                await new Promise(r => setTimeout(r, 1200));
+
+                const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(text)}?nologo=true`;
+                const responseText = `**Generated Image** for: _${text}_\n\n![${text}](${imgUrl})`;
+                
+                // Remove loading spinner
+                aiMsgEls.answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(responseText));
+                
+                messages.push({ role: "assistant", content: responseText });
+                scrollToBottom();
+                return; // STOP execution here, do not call Cerebras API
+            }
+
+            // --- STANDARD TEXT GENERATION ---
+            const aiMsgEls = appendMessage('assistant', '', true);
+            scrollToBottom();
 
             let fullResponse = "";
 
             try {
+                // Prepare messages 
+                const apiMessages = messages.map(m => ({ ...m }));
+                const lastMsg = apiMessages[apiMessages.length - 1];
+                
+                // Per-Turn Logic: Only force thinking if NOT Qwen 235B AND NOT Sumo (though Sumo handled above)
+                if (lastMsg.role === 'user' && currentModelId !== 'qwen-3-235b-a22b-instruct-2507' && currentModelId !== 'sumo-ai-gen') {
+                    lastMsg.content += "\n\n(IMPORTANT: Start your response immediately with <think> to reason through this. Do NOT output any filler text before the tag. After reasoning, keep your final answer CONCISE and SHORT unless explicitly asked for details.)";
+                }
+
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: {
@@ -268,21 +533,17 @@
                         'Authorization': `Bearer ${API_KEY}`
                     },
                     body: JSON.stringify({
-                        model: AI_MODEL,
-                        messages: messages,
-                        stream: true, // Enable streaming
+                        model: currentModelId,
+                        messages: apiMessages, 
+                        stream: true,
                         temperature: 0.7,
                         max_tokens: 4000
                     })
                 });
 
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(`API Error ${response.status}: ${errorData.error?.message || response.statusText}`);
-                }
+                if (!response.ok) throw new Error('API Error');
 
-                // Remove loading animation div before streaming starts
-                aiMsgEl.bubble.innerHTML = ''; 
+                if (aiMsgEls.answerContainer) aiMsgEls.answerContainer.innerHTML = '';
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder("utf-8");
@@ -295,45 +556,93 @@
                     const lines = chunk.split('\n');
 
                     for (const line of lines) {
-                        if (line.trim() === '') continue;
-                        if (line.trim() === 'data: [DONE]') continue;
-
-                        if (line.startsWith('data: ')) {
+                        if (line.startsWith('data: ') && line !== 'data: [DONE]') {
                             try {
                                 const json = JSON.parse(line.substring(6));
                                 const content = json.choices[0]?.delta?.content || "";
                                 fullResponse += content;
-                                
-                                // Live Markdown Rendering
-                                // Note: Frequent parsing can be heavy, but modern browsers handle it well for chat
-                                aiMsgEl.bubble.innerHTML = DOMPurify.sanitize(marked.parse(fullResponse));
-                                
-                                // Re-highlight code blocks
-                                aiMsgEl.bubble.querySelectorAll('pre code').forEach((block) => {
-                                    hljs.highlightElement(block);
-                                });
 
+                                // --- IMPROVED PARSING LOGIC ---
+                                
+                                // Regex search for case-insensitive tags
+                                const thinkStartMatch = /<think>/i.exec(fullResponse);
+                                const thinkEndMatch = /<\/think>/i.exec(fullResponse);
+                                
+                                const thinkStart = thinkStartMatch ? thinkStartMatch.index : -1;
+                                const thinkEnd = thinkEndMatch ? thinkEndMatch.index : -1;
+                                
+                                let thoughtPart = "";
+                                let answerPart = fullResponse;
+                                let isThinking = false;
+
+                                if (thinkStart !== -1) {
+                                    if (thinkEnd !== -1) {
+                                        // Complete thinking block
+                                        thoughtPart = fullResponse.substring(thinkStart + 7, thinkEnd);
+                                        const postThink = fullResponse.substring(thinkEnd + 8);
+                                        answerPart = postThink;
+                                        
+                                    } else {
+                                        // Incomplete thinking block (Currently Thinking)
+                                        thoughtPart = fullResponse.substring(thinkStart + 7);
+                                        answerPart = "";
+                                        isThinking = true;
+                                    }
+                                }
+
+                                if (thoughtPart) {
+                                    aiMsgEls.thinkingContainer.classList.remove('hidden');
+                                    // Make details open if thinking, otherwise optional
+                                    const detailsHTML = `
+                                        <details class="group" ${isThinking ? 'open' : ''}>
+                                            <summary class="list-none flex items-center gap-2 text-gray-400 hover:text-gray-200 cursor-pointer transition-colors text-sm select-none font-medium">
+                                                <i class="ph ph-brain text-lg"></i>
+                                                <span>${isThinking ? 'Thinking...' : 'Thought Process'}</span>
+                                                <i class="ph ph-caret-down group-open:rotate-180 transition-transform ml-auto opacity-50"></i>
+                                            </summary>
+                                            <div class="mt-2 text-gray-400 text-sm leading-relaxed border-l-2 border-gray-700 pl-3">
+                                                ${DOMPurify.sanitize(marked.parse(thoughtPart))}
+                                            </div>
+                                        </details>
+                                    `;
+                                    aiMsgEls.thinkingContainer.innerHTML = detailsHTML;
+                                }
+
+                                if (answerPart) {
+                                    aiMsgEls.answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(answerPart));
+                                    aiMsgEls.answerContainer.querySelectorAll('pre code').forEach((block) => {
+                                        hljs.highlightElement(block);
+                                    });
+                                } else if (isThinking) {
+                                    aiMsgEls.answerContainer.innerHTML = '';
+                                }
+                                
                                 scrollToBottom();
-                            } catch (err) {
-                                console.error("Error parsing stream:", err);
-                            }
+                            } catch (e) { /* ignore parse errors */ }
                         }
                     }
                 }
-
-                // Add final response to history
+                
                 messages.push({ role: "assistant", content: fullResponse });
 
             } catch (error) {
-                console.error("Fetch error:", error);
-                aiMsgEl.bubble.innerHTML = `<span class="text-red-400">Error: ${error.message}. Please check your API key and connection.</span>`;
-            } finally {
-                sendBtn.disabled = false;
-                sendBtn.classList.remove('opacity-50');
-                userInput.focus();
-                scrollToBottom();
+                console.error(error);
+                if(aiMsgEls.answerContainer) aiMsgEls.answerContainer.innerHTML = `<span class="text-red-400">Error connecting to AI.</span>`;
             }
         });
+
+        // Functions Menu Toggle
+        const attachBtn = document.getElementById('attach-btn-real');
+        const attachMenu = document.getElementById('attach-menu');
+
+        attachBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            attachMenu.classList.toggle('hidden');
+        });
+        
+        document.getElementById('attach-btn').style.display = 'none';
+        attachBtn.classList.remove('hidden');
+
     </script>
 </body>
 </html>
