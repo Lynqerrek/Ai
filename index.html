@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Llama 3.3 Chat</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- DOMPurify for security (sanitizing HTML) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+    <!-- Highlight.js for code syntax highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <style>
+        /* Custom scrollbar for webkit */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        /* Typography fixes for markdown content */
+        .prose pre {
+            background-color: #1f2937;
+            padding: 1em;
+            border-radius: 0.5em;
+            overflow-x: auto;
+        }
+        .prose code {
+            color: #e5e7eb;
+            background-color: #374151;
+            padding: 0.2em 0.4em;
+            border-radius: 0.25em;
+            font-size: 0.875em;
+        }
+        .prose pre code {
+            background-color: transparent;
+            padding: 0;
+            color: inherit;
+        }
+        .prose p {
+            margin-bottom: 0.75em;
+        }
+        .prose ul {
+            list-style-type: disc;
+            padding-left: 1.5em;
+            margin-bottom: 0.75em;
+        }
+        .prose ol {
+            list-style-type: decimal;
+            padding-left: 1.5em;
+            margin-bottom: 0.75em;
+        }
+        
+        /* Typing animation dot */
+        .typing-dot {
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 h-screen flex flex-col font-sans antialiased overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-gray-800 border-b border-gray-700 p-4 flex justify-between items-center shadow-md z-10">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-lg">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+            </div>
+            <div>
+                <h1 class="font-bold text-xl text-white tracking-tight">AI Assistant</h1>
+                <p class="text-xs text-blue-400 font-mono" id="model-display">Connecting...</p>
+            </div>
+        </div>
+        <button onclick="clearChat()" class="text-gray-400 hover:text-white transition-colors text-sm font-medium flex items-center gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Clear History
+        </button>
+    </header>
+
+    <!-- Chat Container -->
+    <main id="chat-container" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 scroll-smooth">
+        <!-- Welcome Message -->
+        <div class="flex justify-start">
+            <div class="bg-gray-800 border border-gray-700 rounded-2xl rounded-tl-none py-3 px-5 max-w-[85%] md:max-w-[75%] shadow-sm">
+                <div class="prose prose-invert prose-sm max-w-none">
+                    <p>Hello! I am connected to <strong>Llama 3.3</strong>. How can I help you with your code or questions today?</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Input Area -->
+    <footer class="p-4 bg-gray-800 border-t border-gray-700">
+        <div class="max-w-4xl mx-auto relative">
+            <form id="chat-form" class="relative flex items-end gap-2 bg-gray-900 border border-gray-600 rounded-xl p-2 shadow-inner focus-within:ring-2 focus-within:ring-blue-500/50 transition-all">
+                
+                <textarea 
+                    id="user-input" 
+                    rows="1" 
+                    placeholder="Type a message..." 
+                    class="w-full bg-transparent text-gray-100 placeholder-gray-500 text-base p-3 resize-none focus:outline-none max-h-48 overflow-y-auto"
+                    onkeydown="handleEnter(event)"></textarea>
+                
+                <button type="submit" id="send-btn" class="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white p-3 rounded-lg transition-all duration-200 flex-shrink-0 shadow-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transform rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                </button>
+            </form>
+            <div class="text-center mt-2">
+                <p class="text-[10px] text-gray-500">AI can make mistakes. Please check important info.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // ==================================================================================
+        // 🛠️ CONFIGURATION SETTINGS
+        // ==================================================================================
+        
+        // 1. YOUR API KEY
+        const API_KEY = 'csk-5tn6vem2ppnw8jvex8vcppdn2n55f9n55hrkt3kkccmd5yfc';
+
+        // 2. THE AI MODEL ID
+        // Note: For Cerebras, common IDs are 'llama3.1-70b' or 'llama-3.3-70b'. 
+        // If 3.3 fails, try 'llama3.1-70b'.
+        const AI_MODEL = 'llama-3.3-70b'; 
+
+        // 3. API ENDPOINT (Cerebras Inference)
+        const API_URL = 'https://api.cerebras.ai/v1/chat/completions';
+
+        // ==================================================================================
+
+        const chatContainer = document.getElementById('chat-container');
+        const chatForm = document.getElementById('chat-form');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const modelDisplay = document.getElementById('model-display');
+
+        // Initialize Markdown renderer
+        marked.setOptions({
+            highlight: function(code, lang) {
+                const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+                return hljs.highlight(code, { language }).value;
+            },
+            langPrefix: 'hljs language-',
+            breaks: true
+        });
+
+        // Display current configuration
+        modelDisplay.innerText = `Model: ${AI_MODEL}`;
+
+        // Store chat history context
+        let messages = [
+            { role: "system", content: "You are a helpful, expert coding assistant." }
+        ];
+
+        // Auto-resize textarea
+        userInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+            if(this.value === '') this.style.height = 'auto';
+        });
+
+        function handleEnter(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if(!sendBtn.disabled) chatForm.dispatchEvent(new Event('submit'));
+            }
+        }
+
+        function clearChat() {
+            if(confirm("Clear conversation history?")) {
+                messages = [{ role: "system", content: "You are a helpful, expert coding assistant." }];
+                // Keep the welcome message, remove the rest
+                const welcome = chatContainer.firstElementChild;
+                chatContainer.innerHTML = '';
+                chatContainer.appendChild(welcome);
+            }
+        }
+
+        function createMessageElement(role, content, isLoading = false) {
+            const wrapper = document.createElement('div');
+            wrapper.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`;
+            
+            const bubble = document.createElement('div');
+            const baseClasses = "py-3 px-5 max-w-[85%] md:max-w-[75%] shadow-sm text-sm md:text-base";
+            
+            if (role === 'user') {
+                bubble.className = `${baseClasses} bg-blue-600 text-white rounded-2xl rounded-tr-none`;
+                bubble.innerText = content; // User text is plain text
+            } else {
+                bubble.className = `${baseClasses} bg-gray-800 border border-gray-700 text-gray-100 rounded-2xl rounded-tl-none prose prose-invert prose-sm max-w-none break-words`;
+                
+                if (isLoading) {
+                    bubble.innerHTML = `
+                        <div class="flex space-x-1 h-6 items-center">
+                            <div class="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
+                            <div class="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
+                            <div class="w-2 h-2 bg-gray-400 rounded-full typing-dot"></div>
+                        </div>`;
+                } else {
+                    // Sanitize and parse markdown
+                    bubble.innerHTML = DOMPurify.sanitize(marked.parse(content));
+                }
+            }
+
+            wrapper.appendChild(bubble);
+            return { wrapper, bubble };
+        }
+
+        function scrollToBottom() {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = userInput.value.trim();
+            if (!text) return;
+
+            // 1. Add User Message
+            const userMsgEl = createMessageElement('user', text);
+            chatContainer.appendChild(userMsgEl.wrapper);
+            messages.push({ role: "user", content: text });
+            
+            userInput.value = '';
+            userInput.style.height = 'auto';
+            scrollToBottom();
+
+            // 2. Add AI Loading State
+            const aiMsgEl = createMessageElement('assistant', '', true);
+            chatContainer.appendChild(aiMsgEl.wrapper);
+            scrollToBottom();
+
+            sendBtn.disabled = true;
+            sendBtn.classList.add('opacity-50');
+
+            let fullResponse = "";
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: AI_MODEL,
+                        messages: messages,
+                        stream: true, // Enable streaming
+                        temperature: 0.7,
+                        max_tokens: 4000
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(`API Error ${response.status}: ${errorData.error?.message || response.statusText}`);
+                }
+
+                // Remove loading animation div before streaming starts
+                aiMsgEl.bubble.innerHTML = ''; 
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.trim() === '') continue;
+                        if (line.trim() === 'data: [DONE]') continue;
+
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const json = JSON.parse(line.substring(6));
+                                const content = json.choices[0]?.delta?.content || "";
+                                fullResponse += content;
+                                
+                                // Live Markdown Rendering
+                                // Note: Frequent parsing can be heavy, but modern browsers handle it well for chat
+                                aiMsgEl.bubble.innerHTML = DOMPurify.sanitize(marked.parse(fullResponse));
+                                
+                                // Re-highlight code blocks
+                                aiMsgEl.bubble.querySelectorAll('pre code').forEach((block) => {
+                                    hljs.highlightElement(block);
+                                });
+
+                                scrollToBottom();
+                            } catch (err) {
+                                console.error("Error parsing stream:", err);
+                            }
+                        }
+                    }
+                }
+
+                // Add final response to history
+                messages.push({ role: "assistant", content: fullResponse });
+
+            } catch (error) {
+                console.error("Fetch error:", error);
+                aiMsgEl.bubble.innerHTML = `<span class="text-red-400">Error: ${error.message}. Please check your API key and connection.</span>`;
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.classList.remove('opacity-50');
+                userInput.focus();
+                scrollToBottom();
+            }
+        });
+    </script>
+</body>
+</html>
