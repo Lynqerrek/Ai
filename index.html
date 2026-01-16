@@ -1,42 +1,85 @@
-<script>
-/* Replace the existing script content with this block. It contains:
-   - the SYSTEM_PROMPT_THINKING with search instructions
-   - detectSearchQuery + createSearchPanel UI
-   - sendMessagesToApi() streaming helper that builds the search flow
-   - chat submit that uses sendMessagesToApi()
-*/
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Chat (Cerebras + Pollinations helper)</title>
 
-const API_KEY = 'csk-2mv8nxk4tpykc2hmhw4kywtpnp3hmtn5nc4fkn9y5y5jhrmp';
-const API_URL = 'https://api.cerebras.ai/v1/chat/completions';
+  <!-- Minimal styles to make UI usable -->
+  <style>
+    :root { --bg:#0b0b0b; --muted:#9ca3af; --panel:#111827; --accent:#10b981; }
+    body { margin:0; font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:var(--bg); color:#e5e7eb; }
+    .app { max-width:900px; margin:28px auto; padding:18px; }
+    .chat { background:linear-gradient(180deg,#061021 0%,#071028 100%); border-radius:10px; padding:12px; min-height:380px; max-height:70vh; overflow:auto;}
+    #messages-list { display:flex; flex-direction:column; gap:12px; }
+    .msg-row { display:flex; }
+    .msg-user { justify-content:flex-end; }
+    .bubble-user { background:#1f2937; color:#fff; padding:8px 14px; border-radius:16px; max-width:75%; word-wrap:break-word; }
+    .bubble-assistant { background:transparent; color:#e6eef8; padding:6px 0; max-width:100%; }
+    .thought-wrapper { background:#0b1220; padding:8px; border-radius:8px; margin-bottom:6px; border-left:3px solid #334155; }
+    .search-panel { background:#071029; border:1px solid rgba(255,255,255,0.04); padding:10px; border-radius:8px; margin-top:8px; }
+    textarea { width:100%; min-height:80px; background:#061226; color:#e6eef8; border:1px solid rgba(255,255,255,0.04); padding:8px; border-radius:6px; resize:vertical; }
+    .controls { display:flex; gap:8px; margin-top:10px; align-items:center; }
+    .btn { background:#0ea5a4; color:#022; padding:8px 10px; border-radius:6px; cursor:pointer; border:none; }
+    .btn.secondary { background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,0.04); }
+    .meta { color:var(--muted); font-size:13px; }
+    form { display:flex; gap:8px; margin-top:12px; }
+    input[type="text"] { flex:1; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.04); background:#071228; color:#e6eef8; }
+  </style>
 
-const AVAILABLE_MODELS = [
-    { id: 'qwen-3-235b-a22b-instruct-2507', name: 'Qwen 3 235B', description: 'Heavy duty instructions' },
-    { id: 'sumo-ai-gen', name: 'SumoAiGenerator', description: 'Image generator' }
-];
+  <!-- Libraries: marked, DOMPurify, highlight.js (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/default.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <h2 style="margin:0 0 10px 0">Chat — Cerebras (Qwen) + Pollinations helper</h2>
 
-let currentModelId = AVAILABLE_MODELS[0].id;
+    <div class="chat" id="chat-container" role="region" aria-label="Chat area">
+      <div id="messages-list"></div>
+      <div id="welcome-screen" style="display:flex; align-items:center; gap:12px; color:var(--muted); margin-top:12px;">
+        <div class="meta">Welcome — ask something. If the assistant thinks it needs a web lookup you will see a search panel.</div>
+      </div>
+    </div>
 
-const chatContainer = document.getElementById('chat-container');
-const messagesList = document.getElementById('messages-list');
-const welcomeScreen = document.getElementById('welcome-screen');
-const chatForm = document.getElementById('chat-form');
-const userInput = document.getElementById('user-input');
-const sendBtn = document.getElementById('send-btn');
-const modelNameDisplays = document.querySelectorAll('.model-name-display');
+    <form id="chat-form" aria-label="Chat form">
+      <input id="user-input" type="text" placeholder="Message the assistant..." autocomplete="off" />
+      <button id="send-btn" class="btn" type="submit">Send</button>
+    </form>
+  </div>
 
-marked.setOptions({
-    highlight: function(code, lang) {
-        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-        return hljs.highlight(code, { language }).value;
-    },
-    langPrefix: 'hljs language-',
-    breaks: true,
-    gfm: true
-});
+  <script>
+  (function () {
+    // --- Configuration (keep your key if you want) ---
+    const API_KEY = 'csk-2mv8nxk4tpykc2hmhw4kywtpnp3hmtn5nc4fkn9y5y5jhrmp';
+    const API_URL = 'https://api.cerebras.ai/v1/chat/completions';
+    const POLLINATIONS_IMAGE_BASE = 'https://image.pollinations.ai/prompt/';
 
-const SYSTEM_PROMPT_BASIC = "You are a helpful, expert coding assistant. Answer concisely and accurately.";
+    // Minimal model list for selector compatibility
+    const AVAILABLE_MODELS = [
+      { id: 'qwen-3-235b-a22b-instruct-2507', name: 'Qwen 3 235B', description: 'Heavy duty instructions' },
+      { id: 'sumo-ai-gen', name: 'SumoAiGenerator', description: 'Image generator' }
+    ];
+    let currentModelId = AVAILABLE_MODELS[0].id;
 
-const SYSTEM_PROMPT_THINKING = `You are a helpful, expert coding assistant.
+    // DOM references (script is at end, so OK)
+    const chatContainer = document.getElementById('chat-container');
+    const messagesList = document.getElementById('messages-list');
+    const welcomeScreen = document.getElementById('welcome-screen');
+    const chatForm = document.getElementById('chat-form');
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+
+    // Marked options & code highlight
+    marked.setOptions({
+      breaks: true,
+      gfm: true
+    });
+
+    const SYSTEM_PROMPT_BASIC = "You are a helpful, expert coding assistant. Answer concisely and accurately.";
+    const SYSTEM_PROMPT_THINKING = `You are a helpful, expert coding assistant.
 
 CRITICAL INSTRUCTION:
 To provide the highest quality answer, you MUST engage in a "Chain of Thought" reasoning process before answering.
@@ -59,381 +102,289 @@ FORMATTING RULES:
 4. Keep the final answer concise unless asked for details.
 `;
 
-let messages = [];
+    let messages = [];
 
-// Detect search instructions in thinking text
-function detectSearchQuery(text) {
-    if (!text) return null;
-    const m1 = /<search>([\\s\\S]*?)<\\/search>/i.exec(text);
-    if (m1) return m1[1].trim();
-    const m2 = /\\[\\[SEARCH:\\s*([\\s\\S]*?)\\]\\]/i.exec(text);
-    if (m2) return m2[1].trim();
-    return null;
-}
-
-// UI to show the search action and accept pasted results
-function createSearchPanel(container, query, onProvideResults) {
-    const existing = container.querySelector('.search-panel');
-    if (existing) return existing;
-
-    const panel = document.createElement('div');
-    panel.className = 'search-panel';
-
-    panel.innerHTML = `
-        <div class="flex items-start justify-between gap-3">
-            <div class="text-sm text-gray-300">Assistant requested a web lookup:</div>
-            <div class="text-xs text-gray-400">Query: <strong>${DOMPurify.sanitize(query)}</strong></div>
-        </div>
-        <div class="mt-2 text-sm text-gray-400">Open a search in a new tab (recommended) or paste the search results below and click <em>Provide results to AI</em>.</div>
-        <div class="flex gap-2 mt-3">
-            <button class="open-search-btn px-3 py-1 rounded-md border border-white/10 text-sm">Open web search</button>
-            <button class="fetch-snippet-btn px-3 py-1 rounded-md border border-white/10 text-sm">(Optional) Fetch snippet via GET</button>
-        </div>
-        <textarea placeholder="Paste top search result or summary here..." class="mt-3"></textarea>
-        <div class="flex justify-end mt-2">
-            <button class="provide-results px-3 py-1 rounded-md bg-white text-black">Provide results to AI</button>
-        </div>
-    `;
-
-    panel.querySelector('.open-search-btn').addEventListener('click', (e) => {
-        window.open('https://www.google.com/search?q=' + encodeURIComponent(query), '_blank');
-    });
-
-    panel.querySelector('.fetch-snippet-btn').addEventListener('click', async (e) => {
-        const url = 'https://r.jina.ai/http://www.google.com/search?q=' + encodeURIComponent(query);
-        const ta = panel.querySelector('textarea');
-        ta.value = 'Attempting to fetch top result text...';
-        try {
-            const resp = await fetch(url);
-            const txt = await resp.text();
-            ta.value = txt.slice(0, 4000);
-        } catch (err) {
-            ta.value = 'Automatic fetch failed (CORS/proxy). Please open the web search and paste results manually.';
-        }
-    });
-
-    panel.querySelector('.provide-results').addEventListener('click', (e) => {
-        const ta = panel.querySelector('textarea');
-        const content = ta.value.trim();
-        if (!content) {
-            alert('Paste search results or summary before providing.');
-            return;
-        }
-        onProvideResults(content);
-    });
-
-    container.appendChild(panel);
-    return panel;
-}
-
-// --- Model UI / selectors (unchanged) ---
-function initModelSelectors() {
-    const dropdowns = [document.getElementById('mobile-dropdown'), document.getElementById('desktop-dropdown')];
-    dropdowns.forEach(dropdown => {
-        if (!dropdown) return;
-        dropdown.innerHTML = '';
-        AVAILABLE_MODELS.forEach(model => {
-            const item = document.createElement('button');
-            item.className = "w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors flex items-center justify-between group";
-            item.onclick = () => selectModel(model.id);
-
-            const textContainer = document.createElement('div');
-            textContainer.className = "flex flex-col";
-
-            const nameSpan = document.createElement('span');
-            nameSpan.className = "text-sm font-medium text-gray-200 group-hover:text-white";
-            nameSpan.innerText = model.name;
-
-            const descSpan = document.createElement('span');
-            descSpan.className = "text-xs text-gray-500 group-hover:text-gray-400";
-            descSpan.innerText = model.description;
-
-            textContainer.appendChild(nameSpan);
-            textContainer.appendChild(descSpan);
-            item.appendChild(textContainer);
-
-            if (model.id === currentModelId) {
-                const check = document.createElement('i');
-                check.className = "ph ph-check text-white text-lg";
-                item.appendChild(check);
-            }
-            dropdown.appendChild(item);
-        });
-    });
-}
-
-function toggleDropdown(type) {
-    const dropdown = document.getElementById(`${type}-dropdown`);
-    const allDropdowns = document.querySelectorAll('.dropdown-menu');
-    allDropdowns.forEach(d => { if (d !== dropdown) d.classList.remove('active'); });
-    dropdown.classList.toggle('active');
-}
-
-function resetChat() {
-    // Make Qwen use thinking prompt so it can decide to search.
-    let initialPrompt = SYSTEM_PROMPT_THINKING;
-    if (currentModelId === 'sumo-ai-gen') initialPrompt = SYSTEM_PROMPT_BASIC;
-
-    messages = [{ role: "system", content: initialPrompt }];
-
-    messagesList.innerHTML = '';
-    messagesList.classList.add('hidden');
-    welcomeScreen.style.display = 'flex';
-    welcomeScreen.style.opacity = '1';
-
-    userInput.value = '';
-    userInput.style.height = 'auto';
-    sendBtn.disabled = true;
-    sendBtn.classList.add('bg-transparent', 'text-gray-500');
-    sendBtn.classList.remove('bg-white', 'text-black');
-}
-
-function selectModel(id) {
-    currentModelId = id;
-    const modelObj = AVAILABLE_MODELS.find(m => m.id === id);
-    modelNameDisplays.forEach(el => el.innerText = modelObj.name);
-    userInput.placeholder = `Message ${modelObj.name}`;
-    initModelSelectors();
-    document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('active'));
-    resetChat();
-}
-
-document.addEventListener('click', (e) => {
-    if (!e.target.closest('.relative')) {
-        document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('active'));
-        const attachMenu = document.getElementById('attach-menu');
-        const attachBtn = document.getElementById('attach-btn-real');
-        if (attachMenu && !attachMenu.contains(e.target) && !attachBtn.contains(e.target)) {
-            attachMenu.classList.add('hidden');
-        }
+    // ========== Helpers ==========
+    function detectSearchQuery(text) {
+      if (!text) return null;
+      const m1 = /<search>([\\s\\S]*?)<\\/search>/i.exec(text);
+      if (m1) return m1[1].trim();
+      const m2 = /\\[\\[SEARCH:\\s*([\\s\\S]*?)\\]\\]/i.exec(text);
+      if (m2) return m2[1].trim();
+      return null;
     }
-});
 
-initModelSelectors();
-document.querySelectorAll('.model-name-display').forEach(el => el.innerText = AVAILABLE_MODELS[0].name);
-resetChat();
-
-// ---------- Chat rendering helpers (unchanged) ----------
-function appendMessage(role, content, isLoading = false) {
-    if (messagesList.classList.contains('hidden')) {
+    function appendMessage(role, content, isLoading = false) {
+      if (messagesList.classList.contains('hidden')) {
         messagesList.classList.remove('hidden');
         welcomeScreen.style.display = 'none';
-    }
+      }
 
-    const messageRow = document.createElement('div');
-    messageRow.className = `w-full flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+      const row = document.createElement('div');
+      row.className = 'msg-row ' + (role === 'user' ? 'msg-user' : 'msg-assistant');
 
-    const bubble = document.createElement('div');
-
-    if (role === 'user') {
-        bubble.className = "bg-[#2f2f2f] text-white px-5 py-2.5 rounded-3xl max-w-[85%] sm:max-w-[75%] text-base leading-relaxed break-words";
+      if (role === 'user') {
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble-user';
         bubble.innerText = content;
-        messageRow.appendChild(bubble);
-        messagesList.appendChild(messageRow);
-    } else {
-        bubble.className = "text-gray-100 max-w-full w-full prose prose-invert prose-p:leading-relaxed prose-pre:p-0";
+        row.appendChild(bubble);
+        messagesList.appendChild(row);
+        scrollToBottom();
+        return { row };
+      } else {
         const container = document.createElement('div');
-        container.className = "flex gap-4 w-full max-w-3xl";
-        const icon = document.createElement('div');
-        icon.className = "flex-shrink-0 w-8 h-8 rounded-full border border-white/10 flex items-center justify-center mt-1";
-        icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="white" stroke-width="2" stroke-linejoin="round"/></svg>`;
-        const textContent = document.createElement('div');
-        textContent.className = "flex-1 min-w-0 overflow-hidden";
+        container.className = 'bubble-assistant';
         const thinkingContainer = document.createElement('div');
-        thinkingContainer.className = "thought-wrapper hidden mb-4";
+        thinkingContainer.className = 'thought-wrapper';
+        thinkingContainer.style.display = 'none';
         const answerContainer = document.createElement('div');
-        answerContainer.className = "answer-wrapper";
+        answerContainer.className = 'answer-wrapper';
         if (isLoading) {
-            answerContainer.innerHTML = `<div class="flex items-center gap-1 h-6"><div class="w-2 h-2 rounded-full typing-dot"></div></div>`;
+          answerContainer.innerHTML = '<div class="meta">Assistant is thinking...</div>';
         } else if (content) {
-            answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(content));
+          answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(content));
         }
-        textContent.appendChild(thinkingContainer);
-        textContent.appendChild(answerContainer);
-        bubble.appendChild(textContent);
-        container.appendChild(icon);
-        container.appendChild(textContent);
-        messageRow.appendChild(container);
-        messagesList.appendChild(messageRow);
-        return {
-            row: messageRow,
-            thinkingContainer: thinkingContainer,
-            answerContainer: answerContainer,
-            loader: answerContainer.firstChild,
-            bubble: bubble
-        };
+        container.appendChild(thinkingContainer);
+        container.appendChild(answerContainer);
+        row.appendChild(container);
+        messagesList.appendChild(row);
+        scrollToBottom();
+        return { row, thinkingContainer, answerContainer };
+      }
     }
-    return { row: messageRow };
-}
 
-function scrollToBottom() {
-    chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
-}
+    function scrollToBottom() {
+      chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
+    }
 
-// ---------- API streaming / search-aware flow ----------
-async function sendMessagesToApi() {
-    const aiMsgEls = appendMessage('assistant', '', true);
-    scrollToBottom();
+    // Create search panel inside given container
+    function createSearchPanel(container, query, onProvideResults) {
+      const existing = container.querySelector('.search-panel');
+      if (existing) return existing;
 
-    let fullResponse = "";
+      const panel = document.createElement('div');
+      panel.className = 'search-panel';
+      panel.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div class="meta">Assistant requested a web lookup</div>
+          <div class="meta">Query: <strong>${DOMPurify.sanitize(query)}</strong></div>
+        </div>
+        <div class="meta" style="margin-top:6px;">Open a search manually or use the auto Pollinations fetch (image) button.</div>
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          <button class="btn open-search secondary">Open Google</button>
+          <button class="btn auto-poll">Auto fetch (Pollinations image)</button>
+          <button class="btn fetch-proxy secondary">Attempt text fetch (proxy)</button>
+        </div>
+        <textarea placeholder="Paste top search result or summary here..." class="search-textarea"></textarea>
+        <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+          <button class="btn provide-results">Provide results to AI</button>
+        </div>
+      `;
 
-    try {
+      const openBtn = panel.querySelector('.open-search');
+      openBtn.addEventListener('click', () => {
+        window.open('https://www.google.com/search?q=' + encodeURIComponent(query), '_blank');
+      });
+
+      panel.querySelector('.fetch-proxy').addEventListener('click', async () => {
+        const ta = panel.querySelector('.search-textarea');
+        ta.value = 'Fetching top result via r.jina.ai (may fail due to CORS)...';
+        try {
+          const proxyUrl = 'https://r.jina.ai/http://www.google.com/search?q=' + encodeURIComponent(query);
+          const resp = await fetch(proxyUrl);
+          const txt = await resp.text();
+          ta.value = txt.slice(0, 4000);
+        } catch (err) {
+          ta.value = 'Automatic fetch failed (CORS/proxy). Please open the web search and paste results manually.';
+        }
+      });
+
+      // Auto Pollinations fetch: create an image URL and insert it into textarea, then provide
+      panel.querySelector('.auto-poll').addEventListener('click', async () => {
+        const ta = panel.querySelector('.search-textarea');
+        const imgUrl = POLLINATIONS_IMAGE_BASE + encodeURIComponent(query) + '?nologo=true';
+        // Provide a simple text result containing the image URL plus an HTML image tag hint
+        const value = `IMAGE FROM POLLINATIONS\n\nImage URL: ${imgUrl}\n\n(You can open the image link to view.)\n\n<!-- If desired, assistant can use this image link as part of reasoning. -->`;
+        ta.value = value;
+        // Small delay to let user see the value
+        setTimeout(() => {
+          onProvideResults(ta.value);
+        }, 300);
+      });
+
+      panel.querySelector('.provide-results').addEventListener('click', () => {
+        const ta = panel.querySelector('.search-textarea');
+        const content = ta.value.trim();
+        if (!content) { alert('Paste search results or use Auto fetch first.'); return; }
+        onProvideResults(content);
+      });
+
+      container.appendChild(panel);
+      return panel;
+    }
+
+    // Reset chat
+    function resetChat() {
+      messages = [{ role: "system", content: SYSTEM_PROMPT_THINKING }];
+      messagesList.innerHTML = '';
+      welcomeScreen.style.display = 'flex';
+      userInput.value = '';
+    }
+
+    // --- Streaming + search-aware flow ---
+    async function sendMessagesToApi() {
+      // render placeholder assistant message
+      const aiMsgEls = appendMessage('assistant', '', true);
+      scrollToBottom();
+
+      let fullResponse = "";
+
+      try {
         const apiMessages = messages.map(m => ({ ...m }));
 
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${API_KEY}`
-            },
-            body: JSON.stringify({
-                model: currentModelId,
-                messages: apiMessages,
-                stream: true,
-                temperature: 0.7,
-                max_tokens: 4000
-            })
+        const resp = await fetch(API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${API_KEY}`
+          },
+          body: JSON.stringify({
+            model: currentModelId,
+            messages: apiMessages,
+            stream: true,
+            temperature: 0.2,
+            max_tokens: 2000
+          })
         });
 
-        if (!response.ok) throw new Error('API Error');
-
-        if (aiMsgEls.answerContainer) aiMsgEls.answerContainer.innerHTML = '';
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder("utf-8");
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            const lines = chunk.split('\\n');
-
-            for (const line of lines) {
-                if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-                    try {
-                        const json = JSON.parse(line.substring(6));
-                        const content = json.choices[0]?.delta?.content || "";
-                        fullResponse += content;
-
-                        const thinkStartMatch = /<think>/i.exec(fullResponse);
-                        const thinkEndMatch = /<\\/think>/i.exec(fullResponse);
-                        const thinkStart = thinkStartMatch ? thinkStartMatch.index : -1;
-                        const thinkEnd = thinkEndMatch ? thinkEndMatch.index : -1;
-
-                        let thoughtPart = "";
-                        let answerPart = fullResponse;
-                        let isThinking = false;
-
-                        if (thinkStart !== -1) {
-                            if (thinkEnd !== -1) {
-                                thoughtPart = fullResponse.substring(thinkStart + 7, thinkEnd);
-                                const postThink = fullResponse.substring(thinkEnd + 8);
-                                answerPart = postThink;
-                            } else {
-                                thoughtPart = fullResponse.substring(thinkStart + 7);
-                                answerPart = "";
-                                isThinking = true;
-                            }
-                        }
-
-                        if (thoughtPart) {
-                            aiMsgEls.thinkingContainer.classList.remove('hidden');
-
-                            // if thought requests search, create UI for the user to run/ paste results
-                            const query = detectSearchQuery(thoughtPart);
-                            if (query) {
-                                createSearchPanel(aiMsgEls.thinkingContainer, query, (searchResults) => {
-                                    // When user provides search results, add them as a user message and continue the flow
-                                    messages.push({ role: 'user', content: `SEARCH RESULTS for: "${query}"\n\n${searchResults}` });
-                                    // continue conversation (assistant should pick up and produce final answer)
-                                    sendMessagesToApi();
-                                });
-                            }
-
-                            const detailsHTML = `
-                                <details class="group" ${isThinking ? 'open' : ''}>
-                                    <summary class="list-none flex items-center gap-2 text-gray-400 hover:text-gray-200 cursor-pointer transition-colors text-sm select-none font-medium">
-                                        <i class="ph ph-brain text-lg"></i>
-                                        <span>${isThinking ? 'Thinking...' : 'Thought Process'}</span>
-                                        <i class="ph ph-caret-down group-open:rotate-180 transition-transform ml-auto opacity-50"></i>
-                                    </summary>
-                                    <div class="mt-2 text-gray-400 text-sm leading-relaxed border-l-2 border-gray-700 pl-3">
-                                        ${DOMPurify.sanitize(marked.parse(thoughtPart))}
-                                    </div>
-                                </details>
-                            `;
-                            aiMsgEls.thinkingContainer.innerHTML = detailsHTML;
-                        }
-
-                        if (answerPart) {
-                            aiMsgEls.answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(answerPart));
-                            aiMsgEls.answerContainer.querySelectorAll('pre code').forEach((block) => {
-                                hljs.highlightElement(block);
-                            });
-                        } else if (isThinking) {
-                            aiMsgEls.answerContainer.innerHTML = '';
-                        }
-
-                        scrollToBottom();
-                    } catch (e) {
-                        // ignore parse errors
-                    }
-                }
-            }
+        if (!resp.ok) {
+          const text = await resp.text().catch(()=>'');
+          throw new Error('API Error: ' + resp.status + ' ' + text);
         }
 
+        // Replace loading UI
+        if (aiMsgEls.answerContainer) aiMsgEls.answerContainer.innerHTML = '';
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+
+        // We'll read stream chunks and update UI progressively
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (!line) continue;
+            // Many stream implementations prefix "data: "
+            const payload = line.startsWith('data: ') ? line.substring(6) : line;
+            if (payload === '[DONE]') continue;
+            try {
+              const json = JSON.parse(payload);
+              const content = json.choices?.[0]?.delta?.content || '';
+              fullResponse += content;
+
+              // detect <think> ... </think>
+              const thinkStartMatch = /<think>/i.exec(fullResponse);
+              const thinkEndMatch = /<\/think>/i.exec(fullResponse);
+              const thinkStart = thinkStartMatch ? thinkStartMatch.index : -1;
+              const thinkEnd = thinkEndMatch ? thinkEndMatch.index : -1;
+
+              let thoughtPart = "";
+              let answerPart = fullResponse;
+              let isThinking = false;
+
+              if (thinkStart !== -1) {
+                if (thinkEnd !== -1) {
+                  thoughtPart = fullResponse.substring(thinkStart + 7, thinkEnd);
+                  const postThink = fullResponse.substring(thinkEnd + 8);
+                  answerPart = postThink;
+                } else {
+                  thoughtPart = fullResponse.substring(thinkStart + 7);
+                  answerPart = "";
+                  isThinking = true;
+                }
+              }
+
+              if (thoughtPart) {
+                aiMsgEls.thinkingContainer.style.display = '';
+                const query = detectSearchQuery(thoughtPart);
+                // Show thought as parsed markdown
+                aiMsgEls.thinkingContainer.innerHTML = DOMPurify.sanitize(marked.parse(thoughtPart));
+
+                if (query) {
+                  // Create search UI and let user provide results or auto-fetch via Pollinations
+                  createSearchPanel(aiMsgEls.thinkingContainer, query, (searchResults) => {
+                    // When user (or auto) provides results, inject them as a user message and re-run the API
+                    messages.push({ role: 'user', content: `SEARCH RESULTS for: "${query}"\n\n${searchResults}` });
+                    // Start another request cycle — assistant should pick up search results
+                    // Important: call sendMessagesToApi but don't await to avoid blocking UI here
+                    // We still finish current reader loop; the assistant will emit final output after the new call too.
+                    setTimeout(() => sendMessagesToApi(), 20);
+                  });
+                }
+              }
+
+              if (answerPart) {
+                aiMsgEls.answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(answerPart));
+                // syntax highlight after injecting code blocks
+                aiMsgEls.answerContainer.querySelectorAll('pre code').forEach((block) => {
+                  hljs.highlightElement(block);
+                });
+              } else if (isThinking) {
+                aiMsgEls.answerContainer.innerHTML = '';
+              }
+
+              scrollToBottom();
+            } catch (err) {
+              // not JSON — ignore
+            }
+          }
+        } // end reading loop
+
+        // push assistant message to history
         messages.push({ role: "assistant", content: fullResponse });
 
-    } catch (error) {
-        console.error(error);
-        if (aiMsgEls.answerContainer) aiMsgEls.answerContainer.innerHTML = `<span class="text-red-400">Error connecting to AI.</span>`;
+      } catch (err) {
+        console.error('sendMessagesToApi error', err);
+        if (aiMsgEls && aiMsgEls.answerContainer) {
+          aiMsgEls.answerContainer.innerHTML = `<div class="meta" style="color:#f87171">Error connecting to AI: ${err.message}</div>`;
+        }
+      }
     }
-}
 
-// Form submit
-chatForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const text = userInput.value.trim();
-    if (!text) return;
+    // Form submit handler
+    chatForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = userInput.value.trim();
+      if (!text) return;
 
-    appendMessage('user', text);
-    messages.push({ role: "user", content: text });
+      appendMessage('user', text);
+      messages.push({ role: "user", content: text });
 
-    userInput.value = '';
-    userInput.style.height = 'auto';
-    sendBtn.disabled = true;
-    sendBtn.classList.add('bg-transparent', 'text-gray-500');
-    sendBtn.classList.remove('bg-white', 'text-black');
+      userInput.value = '';
+      scrollToBottom();
 
-    scrollToBottom();
-
-    // Image generator flow
-    if (currentModelId === 'sumo-ai-gen') {
-        const aiMsgEls = appendMessage('assistant', '', true);
-        scrollToBottom();
-        await new Promise(r => setTimeout(r, 1200));
-        const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(text)}?nologo=true`;
-        const responseText = `**Generated Image** for: _${text}_\n\n![${text}](${imgUrl})`;
-        aiMsgEls.answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(responseText));
+      // If image generator model requested (sumo-ai-gen) use Pollinations to generate image and return
+      if (currentModelId === 'sumo-ai-gen') {
+        const aiEls = appendMessage('assistant', '', true);
+        const prompt = text;
+        const imgUrl = POLLINATIONS_IMAGE_BASE + encodeURIComponent(prompt) + '?nologo=true';
+        const responseText = `**Generated Image** for: _${prompt}_\n\n![${prompt}](${imgUrl})\n\nImage URL: ${imgUrl}`;
+        aiEls.answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(responseText));
         messages.push({ role: "assistant", content: responseText });
         scrollToBottom();
         return;
-    }
+      }
 
-    // Standard: send and stream
-    await sendMessagesToApi();
-});
+      // Standard: send to Cerebras streaming endpoint
+      await sendMessagesToApi();
+    });
 
-// Attach menu toggling (unchanged)
-const attachBtn = document.getElementById('attach-btn-real');
-const attachMenu = document.getElementById('attach-menu');
-
-attachBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    attachMenu.classList.toggle('hidden');
-});
-
-document.getElementById('attach-btn').style.display = 'none';
-attachBtn.classList.remove('hidden');
-
-</script>
+    // initialization
+    resetChat();
+  })();
+  </script>
+</body>
+</html>
