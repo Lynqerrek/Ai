@@ -1,648 +1,439 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Ai Chat Free</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Marked.js -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- DOMPurify -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
-    <!-- Highlight.js -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <!-- Phosphor Icons -->
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+<script>
+/* Replace the existing script content with this block. It contains:
+   - the SYSTEM_PROMPT_THINKING with search instructions
+   - detectSearchQuery + createSearchPanel UI
+   - sendMessagesToApi() streaming helper that builds the search flow
+   - chat submit that uses sendMessagesToApi()
+*/
 
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        gpt: {
-                            sidebar: '#171717',
-                            main: '#212121',
-                            input: '#2f2f2f',
-                            user: '#2f2f2f',
-                            text: '#ececec',
-                            subtext: '#b4b4b4',
-                            hover: '#2f2f2f'
-                        }
-                    },
-                    fontFamily: {
-                        sans: ['Söhne', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Ubuntu', 'Cantarell', 'Noto Sans', 'sans-serif', 'Helvetica Neue', 'Arial', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'],
-                    }
-                }
-            }
-        }
-    </script>
+const API_KEY = 'csk-2mv8nxk4tpykc2hmhw4kywtpnp3hmtn5nc4fkn9y5y5jhrmp';
+const API_URL = 'https://api.cerebras.ai/v1/chat/completions';
 
-    <style>
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #424242; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #6b6b6b; }
+const AVAILABLE_MODELS = [
+    { id: 'qwen-3-235b-a22b-instruct-2507', name: 'Qwen 3 235B', description: 'Heavy duty instructions' },
+    { id: 'sumo-ai-gen', name: 'SumoAiGenerator', description: 'Image generator' }
+];
 
-        .prose pre { background-color: #0d0d0d !important; border-radius: 0.5rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
-        .prose code { background-color: rgba(255,255,255,0.1); padding: 0.2em 0.4em; border-radius: 0.25em; font-size: 0.875em; font-weight: 400; }
-        .prose pre code { background-color: transparent; padding: 0; font-size: 0.875em; color: inherit; }
-        .prose p { margin-bottom: 1em; line-height: 1.6; }
-        .prose ul, .prose ol { margin-bottom: 1em; padding-left: 1.5em; }
-        .prose li { margin-bottom: 0.25em; }
-        
-        /* Make images responsive and rounded */
-        .prose img { border-radius: 0.75rem; margin-top: 1rem; margin-bottom: 1rem; width: 100%; height: auto; display: block; }
-        
-        .typing-dot { animation: bounce 1.4s infinite ease-in-out both; background-color: #ececec; }
-        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
-        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
-        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+let currentModelId = AVAILABLE_MODELS[0].id;
 
-        #user-input::-webkit-scrollbar { display: none; }
-        
-        /* Dropdown transition */
-        .dropdown-menu {
-            opacity: 0;
-            transform: translateY(-10px) translateX(-50%);
-            pointer-events: none;
-            transition: all 0.2s ease-in-out;
-        }
-        .dropdown-menu.active {
-            opacity: 1;
-            transform: translateY(0) translateX(-50%);
-            pointer-events: auto;
-        }
+const chatContainer = document.getElementById('chat-container');
+const messagesList = document.getElementById('messages-list');
+const welcomeScreen = document.getElementById('welcome-screen');
+const chatForm = document.getElementById('chat-form');
+const userInput = document.getElementById('user-input');
+const sendBtn = document.getElementById('send-btn');
+const modelNameDisplays = document.querySelectorAll('.model-name-display');
 
-        /* Thought Process Styles - Updated for consistency */
-        .thought-wrapper {
-            margin-bottom: 1rem;
-        }
-        details > summary {
-            list-style: none;
-        }
-        details > summary::-webkit-details-marker {
-            display: none;
-        }
-    </style>
-</head>
-<body class="bg-gpt-main text-gpt-text h-[100dvh] flex overflow-hidden font-sans">
+marked.setOptions({
+    highlight: function(code, lang) {
+        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+        return hljs.highlight(code, { language }).value;
+    },
+    langPrefix: 'hljs language-',
+    breaks: true,
+    gfm: true
+});
 
-    <!-- Sidebar Removed -->
+const SYSTEM_PROMPT_BASIC = "You are a helpful, expert coding assistant. Answer concisely and accurately.";
 
-    <!-- Main Content -->
-    <div class="flex-1 flex flex-col relative h-full">
-        
-        <!-- Mobile Header -->
-        <header class="flex md:hidden justify-between items-center p-3 text-gray-200 bg-gpt-main z-10 sticky top-0">
-            <div class="w-10"></div> <!-- Spacer -->
-            
-            <!-- Mobile Model Selector -->
-            <div class="relative">
-                <button onclick="toggleDropdown('mobile')" class="font-medium text-base flex items-center gap-1 cursor-pointer hover:bg-gray-800 px-3 py-1 rounded-lg transition-colors" id="mobile-model-btn">
-                    <span class="model-name-display">Llama 3.3</span> 
-                    <i class="ph ph-caret-down text-gray-500"></i>
-                </button>
-                <div id="mobile-dropdown" class="dropdown-menu absolute top-full left-1/2 mt-2 w-64 bg-gpt-input border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col p-1.5">
-                    <!-- JS populated -->
-                </div>
-            </div>
-
-            <button class="p-2 rounded-md hover:bg-gray-800" onclick="window.location.reload()">
-                <i class="ph ph-note-pencil text-2xl"></i>
-            </button>
-        </header>
-
-        <!-- Desktop Header (Model Selector) -->
-        <header class="hidden md:flex items-center p-3 text-gray-200 absolute top-0 left-0 right-0 z-10">
-            <div class="relative mx-auto">
-                <button onclick="toggleDropdown('desktop')" class="flex items-center gap-1 bg-transparent hover:bg-gpt-input px-3 py-1.5 rounded-xl transition-colors group" id="desktop-model-btn">
-                    <span class="font-semibold text-lg opacity-90 model-name-display">Llama 3.3</span>
-                    <i class="ph ph-caret-down text-gray-500 mt-0.5 group-hover:text-gray-300 transition-colors"></i>
-                </button>
-
-                <!-- Desktop Dropdown -->
-                <div id="desktop-dropdown" class="dropdown-menu absolute top-full left-1/2 mt-2 w-72 bg-gpt-input border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col p-1.5">
-                    <!-- JS populated -->
-                </div>
-            </div>
-        </header>
-
-        <!-- Chat Area -->
-        <main id="chat-container" class="flex-1 overflow-y-auto w-full max-w-3xl mx-auto pt-2 pb-32 px-4 scroll-smooth">
-            
-            <!-- Empty State / Welcome -->
-            <div class="h-full flex flex-col items-center justify-center space-y-8 opacity-100 transition-opacity duration-500" id="welcome-screen">
-                <div class="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-2">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="black" stroke-width="2" stroke-linejoin="round"/>
-                    </svg>
-                </div>
-                <div class="grid grid-cols-2 gap-4 w-full max-w-2xl px-4">
-                    <button class="border border-white/10 rounded-2xl p-4 hover:bg-white/5 text-left transition-colors text-sm">
-                        <div class="font-medium text-gray-200 mb-1">Code a Python script</div>
-                        <div class="text-gray-500">to automate daily tasks</div>
-                    </button>
-                    <button class="border border-white/10 rounded-2xl p-4 hover:bg-white/5 text-left transition-colors text-sm">
-                        <div class="font-medium text-gray-200 mb-1">Explain quantum physics</div>
-                        <div class="text-gray-500">like I'm five years old</div>
-                    </button>
-                    <button class="border border-white/10 rounded-2xl p-4 hover:bg-white/5 text-left transition-colors text-sm">
-                        <div class="font-medium text-gray-200 mb-1">Write a haiku</div>
-                        <div class="text-gray-500">about artificial intelligence</div>
-                    </button>
-                    <button class="border border-white/10 rounded-2xl p-4 hover:bg-white/5 text-left transition-colors text-sm">
-                        <div class="font-medium text-gray-200 mb-1">Debug this code</div>
-                        <div class="text-gray-500">find the error in the loop</div>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Messages will be inserted here -->
-            <div id="messages-list" class="flex flex-col gap-6 w-full hidden pb-4"></div>
-            
-        </main>
-
-        <!-- Input Area -->
-        <footer class="w-full max-w-3xl mx-auto px-4 pb-4 md:pb-6 relative z-20">
-            <div class="relative">
-                <form id="chat-form" class="bg-gpt-input rounded-[26px] shadow-lg border border-white/5 flex flex-col transition-all">
-                    
-                    <!-- Textarea -->
-                    <div class="flex items-end gap-2 p-3 relative">
-                        <!-- Functions Menu Wrapper -->
-                        <div class="relative">
-                            <button type="button" id="attach-btn" class="text-gray-400 hover:text-white p-2 rounded-full transition-colors hidden sm:block">
-                                <i class="ph ph-plus text-xl"></i>
-                                <i class="ph ph-paperclip text-xl absolute top-2 left-2 opacity-0"></i>
-                            </button>
-                             <button type="button" id="attach-btn-real" class="text-gray-400 hover:text-white p-2 rounded-full transition-colors hidden sm:block">
-                                <i class="ph ph-paperclip text-xl"></i>
-                            </button>
-                            
-                            <!-- The Functions Tab/Menu -->
-                            <div id="attach-menu" class="absolute bottom-full left-0 mb-3 w-56 bg-gpt-input border border-white/10 rounded-2xl shadow-2xl overflow-hidden hidden z-50 p-1.5 transition-all origin-bottom-left">
-                                <div class="px-3 py-3 text-center text-sm text-gray-500 italic">
-                                    No functions active
-                                </div>
-                            </div>
-                        </div>
-
-                        <textarea 
-                            id="user-input" 
-                            rows="1" 
-                            placeholder="Message..." 
-                            class="w-full bg-transparent text-white placeholder-gray-400 text-base py-3 resize-none focus:outline-none max-h-[200px]"
-                            onkeydown="handleEnter(event)"></textarea>
-                        
-                        <button type="submit" id="send-btn" disabled class="bg-white/20 disabled:bg-transparent disabled:text-gray-500 text-white p-2 rounded-full transition-all duration-200 flex-shrink-0 self-end mb-1">
-                            <i class="ph ph-arrow-up text-xl font-bold"></i>
-                        </button>
-                    </div>
-                </form>
-                <div class="text-center mt-2">
-                    <p class="text-xs text-gray-500">AI can make mistakes. Check important info.</p>
-                </div>
-            </div>
-        </footer>
-    </div>
-
-    <script>
-        // ==================================================================================
-        // 🛠️ CONFIGURATION SETTINGS
-        // ==================================================================================
-        
-        const API_KEY = 'csk-2mv8nxk4tpykc2hmhw4kywtpnp3hmtn5nc4fkn9y5y5jhrmp';
-        const API_URL = 'https://api.cerebras.ai/v1/chat/completions';
-
-        // Updated Model List with SumoAiGenerator
-        const AVAILABLE_MODELS = [
-            { id: 'llama-3.3-70b', name: 'Llama 3.3', description: 'Great for general tasks' },
-            { id: 'gpt-oss-120b', name: 'GPT OSS 120B', description: 'High capability model' },
-            { id: 'qwen-3-32b', name: 'Qwen 3 32B', description: 'Fast and efficient' },
-            { id: 'zai-glm-4.6', name: 'Zai GLM 4.6', description: 'Advanced reasoning' },
-            { id: 'qwen-3-235b-a22b-instruct-2507', name: 'Qwen 3 235B', description: 'Heavy duty instructions' },
-            { id: 'sumo-ai-gen', name: 'SumoAiGenerator', description: 'Image generator' }
-        ];
-
-        let currentModelId = AVAILABLE_MODELS[0].id;
-
-        // ==================================================================================
-
-        const chatContainer = document.getElementById('chat-container');
-        const messagesList = document.getElementById('messages-list');
-        const welcomeScreen = document.getElementById('welcome-screen');
-        const chatForm = document.getElementById('chat-form');
-        const userInput = document.getElementById('user-input');
-        const sendBtn = document.getElementById('send-btn');
-        const modelNameDisplays = document.querySelectorAll('.model-name-display');
-
-        // Initialize Markdown renderer
-        marked.setOptions({
-            highlight: function(code, lang) {
-                const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-                return hljs.highlight(code, { language }).value;
-            },
-            langPrefix: 'hljs language-',
-            breaks: true,
-            gfm: true
-        });
-
-        // STANDARD SYSTEM PROMPT (For Qwen/General)
-        const SYSTEM_PROMPT_BASIC = "You are a helpful, expert coding assistant. Answer concisely and accurately.";
-
-        // CHAIN OF THOUGHT SYSTEM PROMPT (For others)
-        const SYSTEM_PROMPT_THINKING = `You are a helpful, expert coding assistant.
+const SYSTEM_PROMPT_THINKING = `You are a helpful, expert coding assistant.
 
 CRITICAL INSTRUCTION:
 To provide the highest quality answer, you MUST engage in a "Chain of Thought" reasoning process before answering.
 
-Your Goal: Use the thinking block to actually SOLVE the problem, catch errors, and refine your approach before presenting the final result.
+If you determine that up-to-date or external information is required to answer the user correctly, inside the <think>...</think> block output exactly one search tag with the query you want performed and nothing else in that tag. Use either of these formats (prefer the first):
+
+<search>your concise search query here</search>
+
+or
+
+[[SEARCH: your concise search query here]]
+
+The front-end will detect this tag, present a small search panel and instructions (open a browser tab for the query and/or paste results). After search results are injected into the conversation, continue the reasoning and deliver the final answer.
 
 FORMATTING RULES:
-1.  **Start Immediately**: Begin your response with <think>. No introductory text (e.g. "Sure!", "Thinking about it...").
-2.  **Thinking Process**: Inside <think>...</think>, you must:
-    -   **Analyze**: Break down requirements.
-    -   **Plan**: Outline steps.
-    -   **Critique**: Check for errors/edge cases.
-    -   **Refine**: Update plan.
-3.  **Final Output**: After closing </think>, provide the polished answer. 
-4.  **Brevity**: Unless requested otherwise, keep the FINAL answer concise.
+1. Start Immediately: Begin your response with <think>. No filler text.
+2. Thinking Process: Inside <think>...</think>, Analyze, Plan, Critique.
+   - If a web search is needed: output <search>query</search> (exactly as above) and stop producing the final answer until search results are provided.
+3. Final Output: After closing </think>, provide the polished answer.
+4. Keep the final answer concise unless asked for details.
+`;
 
-Output Structure:
-<think>
-[Deep reasoning...]
-</think>
-[Concise final response]`;
-        
-        let messages = [];
+let messages = [];
 
-        // --- Model Switching Logic ---
-        function initModelSelectors() {
-            const dropdowns = [document.getElementById('mobile-dropdown'), document.getElementById('desktop-dropdown')];
-            
-            dropdowns.forEach(dropdown => {
-                if (!dropdown) return;
-                dropdown.innerHTML = '';
-                
-                AVAILABLE_MODELS.forEach(model => {
-                    const item = document.createElement('button');
-                    item.className = "w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors flex items-center justify-between group";
-                    item.onclick = () => selectModel(model.id);
-                    
-                    const textContainer = document.createElement('div');
-                    textContainer.className = "flex flex-col";
-                    
-                    const nameSpan = document.createElement('span');
-                    nameSpan.className = "text-sm font-medium text-gray-200 group-hover:text-white";
-                    nameSpan.innerText = model.name;
-                    
-                    const descSpan = document.createElement('span');
-                    descSpan.className = "text-xs text-gray-500 group-hover:text-gray-400";
-                    descSpan.innerText = model.description;
+// Detect search instructions in thinking text
+function detectSearchQuery(text) {
+    if (!text) return null;
+    const m1 = /<search>([\\s\\S]*?)<\\/search>/i.exec(text);
+    if (m1) return m1[1].trim();
+    const m2 = /\\[\\[SEARCH:\\s*([\\s\\S]*?)\\]\\]/i.exec(text);
+    if (m2) return m2[1].trim();
+    return null;
+}
 
-                    textContainer.appendChild(nameSpan);
-                    textContainer.appendChild(descSpan);
-                    item.appendChild(textContainer);
+// UI to show the search action and accept pasted results
+function createSearchPanel(container, query, onProvideResults) {
+    const existing = container.querySelector('.search-panel');
+    if (existing) return existing;
 
-                    if (model.id === currentModelId) {
-                        const check = document.createElement('i');
-                        check.className = "ph ph-check text-white text-lg";
-                        item.appendChild(check);
-                    }
+    const panel = document.createElement('div');
+    panel.className = 'search-panel';
 
-                    dropdown.appendChild(item);
-                });
-            });
+    panel.innerHTML = `
+        <div class="flex items-start justify-between gap-3">
+            <div class="text-sm text-gray-300">Assistant requested a web lookup:</div>
+            <div class="text-xs text-gray-400">Query: <strong>${DOMPurify.sanitize(query)}</strong></div>
+        </div>
+        <div class="mt-2 text-sm text-gray-400">Open a search in a new tab (recommended) or paste the search results below and click <em>Provide results to AI</em>.</div>
+        <div class="flex gap-2 mt-3">
+            <button class="open-search-btn px-3 py-1 rounded-md border border-white/10 text-sm">Open web search</button>
+            <button class="fetch-snippet-btn px-3 py-1 rounded-md border border-white/10 text-sm">(Optional) Fetch snippet via GET</button>
+        </div>
+        <textarea placeholder="Paste top search result or summary here..." class="mt-3"></textarea>
+        <div class="flex justify-end mt-2">
+            <button class="provide-results px-3 py-1 rounded-md bg-white text-black">Provide results to AI</button>
+        </div>
+    `;
+
+    panel.querySelector('.open-search-btn').addEventListener('click', (e) => {
+        window.open('https://www.google.com/search?q=' + encodeURIComponent(query), '_blank');
+    });
+
+    panel.querySelector('.fetch-snippet-btn').addEventListener('click', async (e) => {
+        const url = 'https://r.jina.ai/http://www.google.com/search?q=' + encodeURIComponent(query);
+        const ta = panel.querySelector('textarea');
+        ta.value = 'Attempting to fetch top result text...';
+        try {
+            const resp = await fetch(url);
+            const txt = await resp.text();
+            ta.value = txt.slice(0, 4000);
+        } catch (err) {
+            ta.value = 'Automatic fetch failed (CORS/proxy). Please open the web search and paste results manually.';
         }
+    });
 
-        function toggleDropdown(type) {
-            const dropdown = document.getElementById(`${type}-dropdown`);
-            const allDropdowns = document.querySelectorAll('.dropdown-menu');
-            allDropdowns.forEach(d => {
-                if (d !== dropdown) d.classList.remove('active');
-            });
-            dropdown.classList.toggle('active');
+    panel.querySelector('.provide-results').addEventListener('click', (e) => {
+        const ta = panel.querySelector('textarea');
+        const content = ta.value.trim();
+        if (!content) {
+            alert('Paste search results or summary before providing.');
+            return;
         }
+        onProvideResults(content);
+    });
 
-        // RESET CHAT FUNCTIONALITY
-        function resetChat() {
-            // Determine prompt based on model
-            let initialPrompt = SYSTEM_PROMPT_THINKING;
-            
-            // Disable Thinking for Qwen 235B OR Sumo Generator
-            if (currentModelId === 'qwen-3-235b-a22b-instruct-2507' || currentModelId === 'sumo-ai-gen') {
-                initialPrompt = SYSTEM_PROMPT_BASIC;
+    container.appendChild(panel);
+    return panel;
+}
+
+// --- Model UI / selectors (unchanged) ---
+function initModelSelectors() {
+    const dropdowns = [document.getElementById('mobile-dropdown'), document.getElementById('desktop-dropdown')];
+    dropdowns.forEach(dropdown => {
+        if (!dropdown) return;
+        dropdown.innerHTML = '';
+        AVAILABLE_MODELS.forEach(model => {
+            const item = document.createElement('button');
+            item.className = "w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors flex items-center justify-between group";
+            item.onclick = () => selectModel(model.id);
+
+            const textContainer = document.createElement('div');
+            textContainer.className = "flex flex-col";
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = "text-sm font-medium text-gray-200 group-hover:text-white";
+            nameSpan.innerText = model.name;
+
+            const descSpan = document.createElement('span');
+            descSpan.className = "text-xs text-gray-500 group-hover:text-gray-400";
+            descSpan.innerText = model.description;
+
+            textContainer.appendChild(nameSpan);
+            textContainer.appendChild(descSpan);
+            item.appendChild(textContainer);
+
+            if (model.id === currentModelId) {
+                const check = document.createElement('i');
+                check.className = "ph ph-check text-white text-lg";
+                item.appendChild(check);
             }
-
-            messages = [
-                { role: "system", content: initialPrompt }
-            ];
-            
-            messagesList.innerHTML = '';
-            messagesList.classList.add('hidden');
-            welcomeScreen.style.display = 'flex';
-            welcomeScreen.style.opacity = '1';
-            
-            userInput.value = '';
-            userInput.style.height = 'auto';
-            sendBtn.disabled = true;
-            sendBtn.classList.add('bg-transparent', 'text-gray-500');
-            sendBtn.classList.remove('bg-white', 'text-black');
-        }
-
-        function selectModel(id) {
-            currentModelId = id;
-            const modelObj = AVAILABLE_MODELS.find(m => m.id === id);
-            
-            modelNameDisplays.forEach(el => el.innerText = modelObj.name);
-            userInput.placeholder = `Message ${modelObj.name}`;
-
-            initModelSelectors();
-            document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('active'));
-            
-            // Trigger Reset
-            resetChat();
-        }
-
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.relative')) {
-                document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('active'));
-                
-                // Also close attach menu if clicking outside
-                const attachMenu = document.getElementById('attach-menu');
-                const attachBtn = document.getElementById('attach-btn-real');
-                if (attachMenu && !attachMenu.contains(e.target) && !attachBtn.contains(e.target)) {
-                    attachMenu.classList.add('hidden');
-                }
-            }
+            dropdown.appendChild(item);
         });
+    });
+}
 
-        initModelSelectors();
-        resetChat(); // Initialize first chat
+function toggleDropdown(type) {
+    const dropdown = document.getElementById(`${type}-dropdown`);
+    const allDropdowns = document.querySelectorAll('.dropdown-menu');
+    allDropdowns.forEach(d => { if (d !== dropdown) d.classList.remove('active'); });
+    dropdown.classList.toggle('active');
+}
 
-        // --- Chat Logic ---
+function resetChat() {
+    // Make Qwen use thinking prompt so it can decide to search.
+    let initialPrompt = SYSTEM_PROMPT_THINKING;
+    if (currentModelId === 'sumo-ai-gen') initialPrompt = SYSTEM_PROMPT_BASIC;
 
-        userInput.addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = (this.scrollHeight) + 'px';
-            
-            if (this.value.trim().length > 0) {
-                sendBtn.disabled = false;
-                sendBtn.classList.remove('bg-transparent', 'text-gray-500');
-                sendBtn.classList.add('bg-white', 'text-black');
-            } else {
-                sendBtn.disabled = true;
-                sendBtn.classList.add('bg-transparent', 'text-gray-500');
-                sendBtn.classList.remove('bg-white', 'text-black');
-            }
-        });
+    messages = [{ role: "system", content: initialPrompt }];
 
-        function handleEnter(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                if(!sendBtn.disabled) chatForm.dispatchEvent(new Event('submit'));
-            }
-        }
+    messagesList.innerHTML = '';
+    messagesList.classList.add('hidden');
+    welcomeScreen.style.display = 'flex';
+    welcomeScreen.style.opacity = '1';
 
-        function appendMessage(role, content, isLoading = false) {
-            if (messagesList.classList.contains('hidden')) {
-                messagesList.classList.remove('hidden');
-                welcomeScreen.style.display = 'none';
-            }
+    userInput.value = '';
+    userInput.style.height = 'auto';
+    sendBtn.disabled = true;
+    sendBtn.classList.add('bg-transparent', 'text-gray-500');
+    sendBtn.classList.remove('bg-white', 'text-black');
+}
 
-            const messageRow = document.createElement('div');
-            messageRow.className = `w-full flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+function selectModel(id) {
+    currentModelId = id;
+    const modelObj = AVAILABLE_MODELS.find(m => m.id === id);
+    modelNameDisplays.forEach(el => el.innerText = modelObj.name);
+    userInput.placeholder = `Message ${modelObj.name}`;
+    initModelSelectors();
+    document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('active'));
+    resetChat();
+}
 
-            const bubble = document.createElement('div');
-            
-            if (role === 'user') {
-                bubble.className = "bg-[#2f2f2f] text-white px-5 py-2.5 rounded-3xl max-w-[85%] sm:max-w-[75%] text-base leading-relaxed break-words";
-                bubble.innerText = content;
-                messageRow.appendChild(bubble);
-                messagesList.appendChild(messageRow); 
-            } else {
-                bubble.className = "text-gray-100 max-w-full w-full prose prose-invert prose-p:leading-relaxed prose-pre:p-0";
-                
-                const container = document.createElement('div');
-                container.className = "flex gap-4 w-full max-w-3xl";
-                
-                const icon = document.createElement('div');
-                icon.className = "flex-shrink-0 w-8 h-8 rounded-full border border-white/10 flex items-center justify-center mt-1";
-                icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="white" stroke-width="2" stroke-linejoin="round"/></svg>`;
-
-                const textContent = document.createElement('div');
-                textContent.className = "flex-1 min-w-0 overflow-hidden";
-                
-                // --- STRUCTURE FOR THINKING VS ANSWER ---
-                const thinkingContainer = document.createElement('div');
-                thinkingContainer.className = "thought-wrapper hidden mb-4"; // Ensure this class matches CSS
-                
-                const answerContainer = document.createElement('div');
-                answerContainer.className = "answer-wrapper";
-
-                if (isLoading) {
-                     answerContainer.innerHTML = `<div class="flex items-center gap-1 h-6"><div class="w-2 h-2 rounded-full typing-dot"></div></div>`;
-                } else if (content) {
-                    answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(content));
-                }
-
-                textContent.appendChild(thinkingContainer);
-                textContent.appendChild(answerContainer);
-
-                bubble.appendChild(textContent); 
-                
-                container.appendChild(icon);
-                container.appendChild(textContent);
-                messageRow.appendChild(container);
-
-                messagesList.appendChild(messageRow); 
-
-                return { 
-                    row: messageRow, 
-                    thinkingContainer: thinkingContainer, 
-                    answerContainer: answerContainer,
-                    loader: answerContainer.firstChild,
-                    bubble: bubble // Return bubble for image injection
-                };
-            }
-
-            return { row: messageRow };
-        }
-
-        function scrollToBottom() {
-            chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
-        }
-
-        chatForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const text = userInput.value.trim();
-            if (!text) return;
-
-            appendMessage('user', text);
-            messages.push({ role: "user", content: text });
-            
-            userInput.value = '';
-            userInput.style.height = 'auto';
-            sendBtn.disabled = true;
-            sendBtn.classList.add('bg-transparent', 'text-gray-500');
-            sendBtn.classList.remove('bg-white', 'text-black');
-            
-            scrollToBottom();
-
-            // --- SPECIAL LOGIC FOR IMAGE GENERATOR ---
-            if (currentModelId === 'sumo-ai-gen') {
-                const aiMsgEls = appendMessage('assistant', '', true); // Loading state
-                scrollToBottom();
-                
-                // Simulate network delay for effect
-                await new Promise(r => setTimeout(r, 1200));
-
-                const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(text)}?nologo=true`;
-                const responseText = `**Generated Image** for: _${text}_\n\n![${text}](${imgUrl})`;
-                
-                // Remove loading spinner
-                aiMsgEls.answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(responseText));
-                
-                messages.push({ role: "assistant", content: responseText });
-                scrollToBottom();
-                return; // STOP execution here, do not call Cerebras API
-            }
-
-            // --- STANDARD TEXT GENERATION ---
-            const aiMsgEls = appendMessage('assistant', '', true);
-            scrollToBottom();
-
-            let fullResponse = "";
-
-            try {
-                // Prepare messages 
-                const apiMessages = messages.map(m => ({ ...m }));
-                const lastMsg = apiMessages[apiMessages.length - 1];
-                
-                // Per-Turn Logic: Only force thinking if NOT Qwen 235B AND NOT Sumo (though Sumo handled above)
-                if (lastMsg.role === 'user' && currentModelId !== 'qwen-3-235b-a22b-instruct-2507' && currentModelId !== 'sumo-ai-gen') {
-                    lastMsg.content += "\n\n(IMPORTANT: Start your response immediately with <think> to reason through this. Do NOT output any filler text before the tag. After reasoning, keep your final answer CONCISE and SHORT unless explicitly asked for details.)";
-                }
-
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${API_KEY}`
-                    },
-                    body: JSON.stringify({
-                        model: currentModelId,
-                        messages: apiMessages, 
-                        stream: true,
-                        temperature: 0.7,
-                        max_tokens: 4000
-                    })
-                });
-
-                if (!response.ok) throw new Error('API Error');
-
-                if (aiMsgEls.answerContainer) aiMsgEls.answerContainer.innerHTML = '';
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder("utf-8");
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    const chunk = decoder.decode(value, { stream: true });
-                    const lines = chunk.split('\n');
-
-                    for (const line of lines) {
-                        if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-                            try {
-                                const json = JSON.parse(line.substring(6));
-                                const content = json.choices[0]?.delta?.content || "";
-                                fullResponse += content;
-
-                                // --- IMPROVED PARSING LOGIC ---
-                                
-                                // Regex search for case-insensitive tags
-                                const thinkStartMatch = /<think>/i.exec(fullResponse);
-                                const thinkEndMatch = /<\/think>/i.exec(fullResponse);
-                                
-                                const thinkStart = thinkStartMatch ? thinkStartMatch.index : -1;
-                                const thinkEnd = thinkEndMatch ? thinkEndMatch.index : -1;
-                                
-                                let thoughtPart = "";
-                                let answerPart = fullResponse;
-                                let isThinking = false;
-
-                                if (thinkStart !== -1) {
-                                    if (thinkEnd !== -1) {
-                                        // Complete thinking block
-                                        thoughtPart = fullResponse.substring(thinkStart + 7, thinkEnd);
-                                        const postThink = fullResponse.substring(thinkEnd + 8);
-                                        answerPart = postThink;
-                                        
-                                    } else {
-                                        // Incomplete thinking block (Currently Thinking)
-                                        thoughtPart = fullResponse.substring(thinkStart + 7);
-                                        answerPart = "";
-                                        isThinking = true;
-                                    }
-                                }
-
-                                if (thoughtPart) {
-                                    aiMsgEls.thinkingContainer.classList.remove('hidden');
-                                    // Make details open if thinking, otherwise optional
-                                    const detailsHTML = `
-                                        <details class="group" ${isThinking ? 'open' : ''}>
-                                            <summary class="list-none flex items-center gap-2 text-gray-400 hover:text-gray-200 cursor-pointer transition-colors text-sm select-none font-medium">
-                                                <i class="ph ph-brain text-lg"></i>
-                                                <span>${isThinking ? 'Thinking...' : 'Thought Process'}</span>
-                                                <i class="ph ph-caret-down group-open:rotate-180 transition-transform ml-auto opacity-50"></i>
-                                            </summary>
-                                            <div class="mt-2 text-gray-400 text-sm leading-relaxed border-l-2 border-gray-700 pl-3">
-                                                ${DOMPurify.sanitize(marked.parse(thoughtPart))}
-                                            </div>
-                                        </details>
-                                    `;
-                                    aiMsgEls.thinkingContainer.innerHTML = detailsHTML;
-                                }
-
-                                if (answerPart) {
-                                    aiMsgEls.answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(answerPart));
-                                    aiMsgEls.answerContainer.querySelectorAll('pre code').forEach((block) => {
-                                        hljs.highlightElement(block);
-                                    });
-                                } else if (isThinking) {
-                                    aiMsgEls.answerContainer.innerHTML = '';
-                                }
-                                
-                                scrollToBottom();
-                            } catch (e) { /* ignore parse errors */ }
-                        }
-                    }
-                }
-                
-                messages.push({ role: "assistant", content: fullResponse });
-
-            } catch (error) {
-                console.error(error);
-                if(aiMsgEls.answerContainer) aiMsgEls.answerContainer.innerHTML = `<span class="text-red-400">Error connecting to AI.</span>`;
-            }
-        });
-
-        // Functions Menu Toggle
-        const attachBtn = document.getElementById('attach-btn-real');
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.relative')) {
+        document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('active'));
         const attachMenu = document.getElementById('attach-menu');
+        const attachBtn = document.getElementById('attach-btn-real');
+        if (attachMenu && !attachMenu.contains(e.target) && !attachBtn.contains(e.target)) {
+            attachMenu.classList.add('hidden');
+        }
+    }
+});
 
-        attachBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            attachMenu.classList.toggle('hidden');
+initModelSelectors();
+document.querySelectorAll('.model-name-display').forEach(el => el.innerText = AVAILABLE_MODELS[0].name);
+resetChat();
+
+// ---------- Chat rendering helpers (unchanged) ----------
+function appendMessage(role, content, isLoading = false) {
+    if (messagesList.classList.contains('hidden')) {
+        messagesList.classList.remove('hidden');
+        welcomeScreen.style.display = 'none';
+    }
+
+    const messageRow = document.createElement('div');
+    messageRow.className = `w-full flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+
+    const bubble = document.createElement('div');
+
+    if (role === 'user') {
+        bubble.className = "bg-[#2f2f2f] text-white px-5 py-2.5 rounded-3xl max-w-[85%] sm:max-w-[75%] text-base leading-relaxed break-words";
+        bubble.innerText = content;
+        messageRow.appendChild(bubble);
+        messagesList.appendChild(messageRow);
+    } else {
+        bubble.className = "text-gray-100 max-w-full w-full prose prose-invert prose-p:leading-relaxed prose-pre:p-0";
+        const container = document.createElement('div');
+        container.className = "flex gap-4 w-full max-w-3xl";
+        const icon = document.createElement('div');
+        icon.className = "flex-shrink-0 w-8 h-8 rounded-full border border-white/10 flex items-center justify-center mt-1";
+        icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="white" stroke-width="2" stroke-linejoin="round"/></svg>`;
+        const textContent = document.createElement('div');
+        textContent.className = "flex-1 min-w-0 overflow-hidden";
+        const thinkingContainer = document.createElement('div');
+        thinkingContainer.className = "thought-wrapper hidden mb-4";
+        const answerContainer = document.createElement('div');
+        answerContainer.className = "answer-wrapper";
+        if (isLoading) {
+            answerContainer.innerHTML = `<div class="flex items-center gap-1 h-6"><div class="w-2 h-2 rounded-full typing-dot"></div></div>`;
+        } else if (content) {
+            answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(content));
+        }
+        textContent.appendChild(thinkingContainer);
+        textContent.appendChild(answerContainer);
+        bubble.appendChild(textContent);
+        container.appendChild(icon);
+        container.appendChild(textContent);
+        messageRow.appendChild(container);
+        messagesList.appendChild(messageRow);
+        return {
+            row: messageRow,
+            thinkingContainer: thinkingContainer,
+            answerContainer: answerContainer,
+            loader: answerContainer.firstChild,
+            bubble: bubble
+        };
+    }
+    return { row: messageRow };
+}
+
+function scrollToBottom() {
+    chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
+}
+
+// ---------- API streaming / search-aware flow ----------
+async function sendMessagesToApi() {
+    const aiMsgEls = appendMessage('assistant', '', true);
+    scrollToBottom();
+
+    let fullResponse = "";
+
+    try {
+        const apiMessages = messages.map(m => ({ ...m }));
+
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${API_KEY}`
+            },
+            body: JSON.stringify({
+                model: currentModelId,
+                messages: apiMessages,
+                stream: true,
+                temperature: 0.7,
+                max_tokens: 4000
+            })
         });
-        
-        document.getElementById('attach-btn').style.display = 'none';
-        attachBtn.classList.remove('hidden');
 
-    </script>
-</body>
-</html>
+        if (!response.ok) throw new Error('API Error');
+
+        if (aiMsgEls.answerContainer) aiMsgEls.answerContainer.innerHTML = '';
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\\n');
+
+            for (const line of lines) {
+                if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                    try {
+                        const json = JSON.parse(line.substring(6));
+                        const content = json.choices[0]?.delta?.content || "";
+                        fullResponse += content;
+
+                        const thinkStartMatch = /<think>/i.exec(fullResponse);
+                        const thinkEndMatch = /<\\/think>/i.exec(fullResponse);
+                        const thinkStart = thinkStartMatch ? thinkStartMatch.index : -1;
+                        const thinkEnd = thinkEndMatch ? thinkEndMatch.index : -1;
+
+                        let thoughtPart = "";
+                        let answerPart = fullResponse;
+                        let isThinking = false;
+
+                        if (thinkStart !== -1) {
+                            if (thinkEnd !== -1) {
+                                thoughtPart = fullResponse.substring(thinkStart + 7, thinkEnd);
+                                const postThink = fullResponse.substring(thinkEnd + 8);
+                                answerPart = postThink;
+                            } else {
+                                thoughtPart = fullResponse.substring(thinkStart + 7);
+                                answerPart = "";
+                                isThinking = true;
+                            }
+                        }
+
+                        if (thoughtPart) {
+                            aiMsgEls.thinkingContainer.classList.remove('hidden');
+
+                            // if thought requests search, create UI for the user to run/ paste results
+                            const query = detectSearchQuery(thoughtPart);
+                            if (query) {
+                                createSearchPanel(aiMsgEls.thinkingContainer, query, (searchResults) => {
+                                    // When user provides search results, add them as a user message and continue the flow
+                                    messages.push({ role: 'user', content: `SEARCH RESULTS for: "${query}"\n\n${searchResults}` });
+                                    // continue conversation (assistant should pick up and produce final answer)
+                                    sendMessagesToApi();
+                                });
+                            }
+
+                            const detailsHTML = `
+                                <details class="group" ${isThinking ? 'open' : ''}>
+                                    <summary class="list-none flex items-center gap-2 text-gray-400 hover:text-gray-200 cursor-pointer transition-colors text-sm select-none font-medium">
+                                        <i class="ph ph-brain text-lg"></i>
+                                        <span>${isThinking ? 'Thinking...' : 'Thought Process'}</span>
+                                        <i class="ph ph-caret-down group-open:rotate-180 transition-transform ml-auto opacity-50"></i>
+                                    </summary>
+                                    <div class="mt-2 text-gray-400 text-sm leading-relaxed border-l-2 border-gray-700 pl-3">
+                                        ${DOMPurify.sanitize(marked.parse(thoughtPart))}
+                                    </div>
+                                </details>
+                            `;
+                            aiMsgEls.thinkingContainer.innerHTML = detailsHTML;
+                        }
+
+                        if (answerPart) {
+                            aiMsgEls.answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(answerPart));
+                            aiMsgEls.answerContainer.querySelectorAll('pre code').forEach((block) => {
+                                hljs.highlightElement(block);
+                            });
+                        } else if (isThinking) {
+                            aiMsgEls.answerContainer.innerHTML = '';
+                        }
+
+                        scrollToBottom();
+                    } catch (e) {
+                        // ignore parse errors
+                    }
+                }
+            }
+        }
+
+        messages.push({ role: "assistant", content: fullResponse });
+
+    } catch (error) {
+        console.error(error);
+        if (aiMsgEls.answerContainer) aiMsgEls.answerContainer.innerHTML = `<span class="text-red-400">Error connecting to AI.</span>`;
+    }
+}
+
+// Form submit
+chatForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = userInput.value.trim();
+    if (!text) return;
+
+    appendMessage('user', text);
+    messages.push({ role: "user", content: text });
+
+    userInput.value = '';
+    userInput.style.height = 'auto';
+    sendBtn.disabled = true;
+    sendBtn.classList.add('bg-transparent', 'text-gray-500');
+    sendBtn.classList.remove('bg-white', 'text-black');
+
+    scrollToBottom();
+
+    // Image generator flow
+    if (currentModelId === 'sumo-ai-gen') {
+        const aiMsgEls = appendMessage('assistant', '', true);
+        scrollToBottom();
+        await new Promise(r => setTimeout(r, 1200));
+        const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(text)}?nologo=true`;
+        const responseText = `**Generated Image** for: _${text}_\n\n![${text}](${imgUrl})`;
+        aiMsgEls.answerContainer.innerHTML = DOMPurify.sanitize(marked.parse(responseText));
+        messages.push({ role: "assistant", content: responseText });
+        scrollToBottom();
+        return;
+    }
+
+    // Standard: send and stream
+    await sendMessagesToApi();
+});
+
+// Attach menu toggling (unchanged)
+const attachBtn = document.getElementById('attach-btn-real');
+const attachMenu = document.getElementById('attach-menu');
+
+attachBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    attachMenu.classList.toggle('hidden');
+});
+
+document.getElementById('attach-btn').style.display = 'none';
+attachBtn.classList.remove('hidden');
+
+</script>
