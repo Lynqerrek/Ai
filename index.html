@@ -247,10 +247,10 @@
         });
 
         // STANDARD SYSTEM PROMPT (For Qwen/General)
-        const SYSTEM_PROMPT_BASIC = "You are a helpful, expert coding assistant. Answer concisely and accurately.";
+        const SYSTEM_PROMPT_BASIC = " ";
 
         // CHAIN OF THOUGHT SYSTEM PROMPT (For others)
-        const SYSTEM_PROMPT_THINKING = `You are a helpful, expert coding assistant.
+        const SYSTEM_PROMPT_THINKING = ` 
 
 CRITICAL INSTRUCTION:
 To provide the highest quality answer, you MUST engage in a "Chain of Thought" reasoning process before answering.
@@ -329,7 +329,7 @@ Output Structure:
             let initialPrompt = SYSTEM_PROMPT_THINKING;
             
             // Disable Thinking for Qwen 235B OR Sumo Generator
-            if (currentModelId === 'qwen-3-235b-a22b-instruct-2507' || currentModelId === 'sumo-ai-gen') {
+            if (currentModelId === 'qwen-3-235b-a22b-instruct-2507' || currentModelId === 'sumo-ai-gen' || currentModelId === 'zai-glm-4.7') {
                 initialPrompt = SYSTEM_PROMPT_BASIC;
             }
 
