@@ -331,7 +331,7 @@ Output Structure:
             let initialPrompt = SYSTEM_PROMPT_THINKING;
             
             // Disable Thinking for Qwen 235B OR Sumo Generator
-            if (currentModelId === 'qwen-3-235b-a22b-instruct-2507' currentModelId === 'zai-glm-4.7' || currentModelId === 'sumo-ai-gen' ) {
+            if (currentModelId === 'qwen-3-235b-a22b-instruct-2507' || currentModelId === 'zai-glm-4.7' || currentModelId === 'sumo-ai-gen' ) {
                 initialPrompt = SYSTEM_PROMPT_BASIC;
             }
 
